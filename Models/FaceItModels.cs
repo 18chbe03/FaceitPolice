@@ -43,6 +43,9 @@ public sealed class FaceitMatchStats
     [JsonPropertyName("Nickname")]
     public string Nickname { get; set; } = "";
 
+    [JsonPropertyName("Team")]
+    public string Team { get; set; } = "";
+
     [JsonPropertyName("Result")]
     public string Result { get; set; } = "";
 

@@ -22,6 +22,8 @@ const int MapStatsMatchLimit = 50;
 
 const int ActivityDays = 30;
 
+const int MinimumGroupPlayersPerMatch = 3;
+
 
 
 
@@ -140,6 +142,12 @@ var mapStatsService =
 
 
 
+var groupMatchFilterService =
+
+    new GroupMatchFilterService();
+
+
+
 var discordStateService =
 
     new DiscordMessageStateService();
@@ -207,9 +215,9 @@ var nicknames =
 
 
 
-var players =
+var fetchedPlayers =
 
-    new List<PlayerLeaderboardEntry>();
+    new List<FetchedPlayerData>();
 
 
 
@@ -289,32 +297,6 @@ foreach (var nickname in nicknames)
 
 
 
-        allPlayerStats.Add(
-
-            fullStats);
-
-
-
-        // Ranking baseras endast på senaste 10.
-
-        var recentStats =
-
-            TakeFirstMatches(
-
-                fullStats,
-
-                PlayerStatsMatchLimit);
-
-
-
-        var calculated =
-
-            CalculateStats(
-
-                recentStats);
-
-
-
         var activityMatches =
 
             await faceitClient.GetMatchCountAsync(
@@ -325,117 +307,25 @@ foreach (var nickname in nicknames)
 
 
 
-        players.Add(
+        allPlayerStats.Add(
 
-            new PlayerLeaderboardEntry
+            fullStats);
+
+
+
+        fetchedPlayers.Add(
+
+            new FetchedPlayerData
 
             {
 
-                Name =
+                Player = player,
 
-                    player.Nickname,
+                Game = cs2,
 
+                FullStats = fullStats,
 
-
-                Elo =
-
-                    cs2.Elo,
-
-
-
-                Level =
-
-                    cs2.SkillLevel,
-
-
-
-                Matches =
-
-                    calculated.Matches,
-
-
-
-                ActivityMatches =
-
-                    activityMatches,
-
-
-
-                Wins =
-
-                    calculated.Wins,
-
-
-
-                Losses =
-
-                    calculated.Losses,
-
-
-
-                WinRate =
-
-                    calculated.WinRate,
-
-
-
-                Kd =
-
-                    calculated.Kd,
-
-
-
-                AverageKills =
-
-                    calculated.AverageKills,
-
-
-
-                Adr =
-
-                    calculated.Adr,
-
-
-
-                HeadshotPercentage =
-
-                    calculated.HeadshotPercentage,
-
-
-
-                Streak =
-
-                    calculated.Streak,
-
-
-
-                TotalKills =
-
-                    calculated.TotalKills,
-
-
-
-                TotalMvps =
-
-                    calculated.TotalMvps,
-
-
-
-                TripleKills =
-
-                    calculated.TripleKills,
-
-
-
-                QuadroKills =
-
-                    calculated.QuadroKills,
-
-
-
-                PentaKills =
-
-                    calculated.PentaKills
+                ActivityMatches = activityMatches
 
             });
 
@@ -455,13 +345,235 @@ foreach (var nickname in nicknames)
 
 
 
-if (players.Count == 0)
+if (fetchedPlayers.Count == 0)
 
 {
 
     throw new Exception(
 
         "Inga FACEIT-spelare kunde hämtas.");
+
+}
+
+
+
+// --------------------------------------------------
+
+// GRUPPMATCHER
+
+// --------------------------------------------------
+
+
+
+var qualifiedMatchTeams =
+
+    groupMatchFilterService.FindQualifiedMatchTeams(
+
+        allPlayerStats,
+
+        MinimumGroupPlayersPerMatch);
+
+
+
+Console.WriteLine();
+
+Console.WriteLine(
+
+    $"👥 Hittade {qualifiedMatchTeams.Count} match/lag-kombinationer " +
+
+    $"med minst {MinimumGroupPlayersPerMatch} spelare från gruppen.");
+
+
+
+var players =
+
+    new List<PlayerLeaderboardEntry>();
+
+
+
+var groupPlayerStats =
+
+    new List<FaceitStatsResponse>();
+
+
+
+foreach (var fetchedPlayer in fetchedPlayers)
+
+{
+
+    // Kartstatistik: filtrera de senaste 50 matcherna.
+
+    var fullGroupStats =
+
+        groupMatchFilterService.Filter(
+
+            fetchedPlayer.FullStats,
+
+            qualifiedMatchTeams);
+
+
+
+    groupPlayerStats.Add(
+
+        fullGroupStats);
+
+
+
+    // Power Ranking: utgå fortfarande från de senaste 10
+
+    // matcherna totalt, men räkna bara gruppmatcher i det fönstret.
+
+    var latestTen =
+
+        TakeFirstMatches(
+
+            fetchedPlayer.FullStats,
+
+            PlayerStatsMatchLimit);
+
+
+
+    var recentGroupStats =
+
+        groupMatchFilterService.Filter(
+
+            latestTen,
+
+            qualifiedMatchTeams);
+
+
+
+    var calculated =
+
+        CalculateStats(
+
+            recentGroupStats);
+
+
+
+    Console.WriteLine(
+
+        $"👥 {fetchedPlayer.Player.Nickname}: " +
+
+        $"{recentGroupStats.Items.Count}/{latestTen.Items.Count} " +
+
+        "av de senaste matcherna räknas som gruppmatcher.");
+
+
+
+    players.Add(
+
+        new PlayerLeaderboardEntry
+
+        {
+
+            Name =
+
+                fetchedPlayer.Player.Nickname,
+
+
+
+            Elo =
+
+                fetchedPlayer.Game.Elo,
+
+
+
+            Level =
+
+                fetchedPlayer.Game.SkillLevel,
+
+
+
+            Matches =
+
+                calculated.Matches,
+
+
+
+            ActivityMatches =
+
+                fetchedPlayer.ActivityMatches,
+
+
+
+            Wins =
+
+                calculated.Wins,
+
+
+
+            Losses =
+
+                calculated.Losses,
+
+
+
+            WinRate =
+
+                calculated.WinRate,
+
+
+
+            Kd =
+
+                calculated.Kd,
+
+
+
+            AverageKills =
+
+                calculated.AverageKills,
+
+
+
+            Adr =
+
+                calculated.Adr,
+
+
+
+            HeadshotPercentage =
+
+                calculated.HeadshotPercentage,
+
+
+
+            Streak =
+
+                calculated.Streak,
+
+
+
+            TotalKills =
+
+                calculated.TotalKills,
+
+
+
+            TotalMvps =
+
+                calculated.TotalMvps,
+
+
+
+            TripleKills =
+
+                calculated.TripleKills,
+
+
+
+            QuadroKills =
+
+                calculated.QuadroKills,
+
+
+
+            PentaKills =
+
+                calculated.PentaKills
+
+        });
 
 }
 
@@ -543,7 +655,7 @@ var mapStats =
 
     mapStatsService.Calculate(
 
-        allPlayerStats);
+        groupPlayerStats);
 
 
 
@@ -570,6 +682,10 @@ var mapStatsMessage =
 var tiltWatchPlayer =
 
     orderedPlayers
+
+        .Where(
+
+            x => x.Matches > 0)
 
         .OrderByDescending(
 
@@ -1193,7 +1309,9 @@ static string BuildLeaderboard(
 
         sb.AppendLine(
 
-            $"> 📊 {player.Wins}V-{player.Losses}F • " +
+            $"> 📊 {player.Wins}V-{player.Losses}F " +
+
+            $"({player.Matches} gruppmatcher) • " +
 
             $"**{player.WinRate:0}% vinst** • " +
 
@@ -1235,6 +1353,28 @@ static string BuildLeaderboard(
 
 
 
+    var performancePlayers =
+
+        players
+
+            .Where(
+
+                x => x.Matches > 0)
+
+            .ToList();
+
+
+
+    var awardPlayers =
+
+        performancePlayers.Count > 0
+
+            ? performancePlayers
+
+            : players.ToList();
+
+
+
     var eloKing =
 
         players.MaxBy(
@@ -1245,7 +1385,7 @@ static string BuildLeaderboard(
 
     var bestKd =
 
-        players.MaxBy(
+        awardPlayers.MaxBy(
 
             x => x.Kd)!;
 
@@ -1253,7 +1393,7 @@ static string BuildLeaderboard(
 
     var bestWinRate =
 
-        players.MaxBy(
+        awardPlayers.MaxBy(
 
             x => x.WinRate)!;
 
@@ -1261,7 +1401,7 @@ static string BuildLeaderboard(
 
     var aimKing =
 
-        players.MaxBy(
+        awardPlayers.MaxBy(
 
             x => x.HeadshotPercentage)!;
 
@@ -1269,7 +1409,7 @@ static string BuildLeaderboard(
 
     var fragMachine =
 
-        players.MaxBy(
+        awardPlayers.MaxBy(
 
             x => x.AverageKills)!;
 
@@ -1277,7 +1417,7 @@ static string BuildLeaderboard(
 
     var damageDealer =
 
-        players.MaxBy(
+        awardPlayers.MaxBy(
 
             x => x.Adr)!;
 
@@ -1285,7 +1425,7 @@ static string BuildLeaderboard(
 
     var lowestAdr =
 
-        players.MinBy(
+        awardPlayers.MinBy(
 
             x => x.Adr)!;
 
@@ -1293,7 +1433,7 @@ static string BuildLeaderboard(
 
     var mvpFarmer =
 
-        players.MaxBy(
+        awardPlayers.MaxBy(
 
             x => x.TotalMvps)!;
 
@@ -1301,7 +1441,7 @@ static string BuildLeaderboard(
 
     var walkingDonation =
 
-        players.MinBy(
+        awardPlayers.MinBy(
 
             x => x.Kd)!;
 
@@ -1309,7 +1449,7 @@ static string BuildLeaderboard(
 
     var lowestHs =
 
-        players.MinBy(
+        awardPlayers.MinBy(
 
             x => x.HeadshotPercentage)!;
 
@@ -1317,7 +1457,7 @@ static string BuildLeaderboard(
 
     var lowestMvps =
 
-        players.MinBy(
+        awardPlayers.MinBy(
 
             x => x.TotalMvps)!;
 
@@ -1325,7 +1465,7 @@ static string BuildLeaderboard(
 
     var lowestWinRate =
 
-        players.MinBy(
+        awardPlayers.MinBy(
 
             x => x.WinRate)!;
 
@@ -1341,7 +1481,7 @@ static string BuildLeaderboard(
 
     var hottest =
 
-        players
+        awardPlayers
 
             .Where(
 
@@ -1674,7 +1814,7 @@ static string BuildLeaderboard(
 
     sb.AppendLine(
 
-        "*Prestationsstatistik baserad på de senaste " +
+        "*Prestationsstatistik baserad på gruppmatcher bland de senaste " +
 
         "10 FACEIT-matcherna.*");
 
@@ -1924,7 +2064,7 @@ static string BuildMapStatistics(
 
     sb.AppendLine(
 
-        $"*Kartstatistiken använder upp till " +
+        $"*Kartstatistiken använder gruppmatcher bland upp till " +
 
         $"{matchesPerPlayer} senaste matcher per spelare.*");
 
@@ -2159,6 +2299,28 @@ static double ToDouble(
 // INTERNA MODELLER
 
 // --------------------------------------------------
+
+
+
+internal sealed class FetchedPlayerData
+
+{
+
+    public FaceitPlayer Player { get; init; } = new();
+
+
+
+    public FaceitGame Game { get; init; } = new();
+
+
+
+    public FaceitStatsResponse FullStats { get; init; } = new();
+
+
+
+    public int ActivityMatches { get; init; }
+
+}
 
 
 
