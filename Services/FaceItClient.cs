@@ -10,6 +10,8 @@ public sealed class FaceitClient
     private readonly HttpClient _httpClient;
     private readonly string _apiKey;
 
+    private bool _hasLoggedAvailableStatFields;
+
     public FaceitClient(
         HttpClient httpClient,
         string apiKey)
@@ -172,10 +174,24 @@ public sealed class FaceitClient
                 $"{(int)response.StatusCode} {body}");
         }
 
-        return await response.Content
-            .ReadFromJsonAsync<FaceitStatsResponse>(
-                cancellationToken: cancellationToken)
-            ?? new FaceitStatsResponse();
+        var json =
+            await response.Content.ReadAsStringAsync(
+                cancellationToken);
+
+        if (!_hasLoggedAvailableStatFields)
+        {
+            LogAvailableStatFields(json);
+
+            _hasLoggedAvailableStatFields = true;
+        }
+
+        return JsonSerializer.Deserialize<FaceitStatsResponse>(
+                   json,
+                   new JsonSerializerOptions
+                   {
+                       PropertyNameCaseInsensitive = true
+                   })
+               ?? new FaceitStatsResponse();
     }
 
     public async Task<int> GetMatchCountAsync(
@@ -264,7 +280,113 @@ public sealed class FaceitClient
         return totalMatches;
     }
 
-    private HttpRequestMessage CreateRequest(string url)
+    private static void LogAvailableStatFields(
+        string json)
+    {
+        try
+        {
+            using var document =
+                JsonDocument.Parse(json);
+
+            if (!document.RootElement.TryGetProperty(
+                    "items",
+                    out var items) ||
+                items.ValueKind != JsonValueKind.Array)
+            {
+                Console.WriteLine(
+                    "⚠️ Kunde inte hitta FACEIT-statfält.");
+
+                return;
+            }
+
+            var statFields =
+                new SortedDictionary<string, string>(
+                    StringComparer.OrdinalIgnoreCase);
+
+            foreach (var item in items.EnumerateArray())
+            {
+                if (!item.TryGetProperty(
+                        "stats",
+                        out var stats) ||
+                    stats.ValueKind != JsonValueKind.Object)
+                {
+                    continue;
+                }
+
+                foreach (var property in stats.EnumerateObject())
+                {
+                    if (statFields.ContainsKey(
+                            property.Name))
+                    {
+                        continue;
+                    }
+
+                    statFields[property.Name] =
+                        GetDisplayValue(
+                            property.Value);
+                }
+            }
+
+            Console.WriteLine();
+            Console.WriteLine(
+                "==============================================");
+
+            Console.WriteLine(
+                "📊 FACEIT - TILLGÄNGLIGA MATCHSTATISTIKFÄLT");
+
+            Console.WriteLine(
+                "==============================================");
+
+            Console.WriteLine(
+                $"Antal olika fält: {statFields.Count}");
+
+            Console.WriteLine();
+
+            foreach (var field in statFields)
+            {
+                Console.WriteLine(
+                    $"{field.Key} = {field.Value}");
+            }
+
+            Console.WriteLine(
+                "==============================================");
+
+            Console.WriteLine();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(
+                $"⚠️ Kunde inte läsa FACEIT-statfält: {ex.Message}");
+        }
+    }
+
+    private static string GetDisplayValue(
+        JsonElement value)
+    {
+        return value.ValueKind switch
+        {
+            JsonValueKind.String =>
+                value.GetString() ?? "",
+
+            JsonValueKind.Number =>
+                value.ToString(),
+
+            JsonValueKind.True =>
+                "true",
+
+            JsonValueKind.False =>
+                "false",
+
+            JsonValueKind.Null =>
+                "null",
+
+            _ =>
+                value.ToString()
+        };
+    }
+
+    private HttpRequestMessage CreateRequest(
+        string url)
     {
         var request =
             new HttpRequestMessage(
