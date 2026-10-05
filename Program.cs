@@ -1,0 +1,837 @@
+using System.Globalization;
+using System.Text;
+using FaceitPolice.Models;
+using FaceitPolice.Services;
+
+// --------------------------------------------------
+// KONFIGURATION
+// --------------------------------------------------
+
+var faceitApiKey =
+    Environment.GetEnvironmentVariable(
+        "FACEIT_API_KEY")
+    ?? throw new InvalidOperationException(
+        "FACEIT_API_KEY saknas.");
+
+var discordWebhook =
+    Environment.GetEnvironmentVariable(
+        "DISCORD_WEBHOOK_URL")
+    ?? throw new InvalidOperationException(
+        "DISCORD_WEBHOOK_URL saknas.");
+
+var discordMessageId =
+    Environment.GetEnvironmentVariable(
+        "DISCORD_MESSAGE_ID");
+
+var tiltWatchMessageId =
+    Environment.GetEnvironmentVariable(
+        "TILT_WATCH_MESSAGE_ID");
+
+var playersConfig =
+    Environment.GetEnvironmentVariable(
+        "FACEIT_PLAYERS")
+    ?? "chrillebille,BOSSEN-_-,ibbann,roevklo,raveleif,DILLicious,-__SMILE__-,fenUH,Willyo,Frodefrode3,vicyo,hebben8or,-starscream";
+
+using var httpClient =
+    new HttpClient();
+
+var faceitClient =
+    new FaceitClient(
+        httpClient,
+        faceitApiKey);
+
+var discordClient =
+    new DiscordClient(
+        httpClient,
+        discordWebhook);
+
+var historyService =
+    new EloHistoryService();
+
+await historyService.LoadAsync();
+
+
+// --------------------------------------------------
+// HÄMTA SPELARE
+// --------------------------------------------------
+
+var nicknames =
+    playersConfig.Split(
+        ',',
+        StringSplitOptions.RemoveEmptyEntries |
+        StringSplitOptions.TrimEntries);
+
+var players =
+    new List<PlayerLeaderboardEntry>();
+
+foreach (var nickname in nicknames)
+{
+    try
+    {
+        Console.WriteLine(
+            $"Hämtar {nickname}...");
+
+        var player =
+            await faceitClient.GetPlayerAsync(
+                nickname);
+
+        if (player is null)
+        {
+            Console.WriteLine(
+                $"Ingen spelare hittades för {nickname}.");
+
+            continue;
+        }
+
+        if (!player.Games.TryGetValue(
+                "cs2",
+                out var cs2))
+        {
+            Console.WriteLine(
+                $"{nickname} saknar CS2-data.");
+
+            continue;
+        }
+
+        var stats =
+            await faceitClient.GetRecentStatsAsync(
+                player.PlayerId,
+                10);
+
+        var calculated =
+            CalculateStats(stats);
+
+        players.Add(
+            new PlayerLeaderboardEntry
+            {
+                Name = player.Nickname,
+
+                Elo = cs2.Elo,
+                Level = cs2.SkillLevel,
+
+                Matches = calculated.Matches,
+                Wins = calculated.Wins,
+                Losses = calculated.Losses,
+
+                WinRate = calculated.WinRate,
+
+                Kd = calculated.Kd,
+
+                AverageKills =
+                    calculated.AverageKills,
+
+                Adr = calculated.Adr,
+
+                HeadshotPercentage =
+                    calculated.HeadshotPercentage,
+
+                Streak = calculated.Streak,
+
+                TotalKills =
+                    calculated.TotalKills,
+
+                TotalMvps =
+                    calculated.TotalMvps,
+
+                TripleKills =
+                    calculated.TripleKills,
+
+                QuadroKills =
+                    calculated.QuadroKills,
+
+                PentaKills =
+                    calculated.PentaKills
+            });
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine(
+            $"FEL för {nickname}: {ex.Message}");
+    }
+}
+
+if (players.Count == 0)
+{
+    throw new Exception(
+        "Inga FACEIT-spelare kunde hämtas.");
+}
+
+
+// --------------------------------------------------
+// ELO-HISTORIK
+// --------------------------------------------------
+
+foreach (var player in players)
+{
+    player.EloDelta7Days =
+        historyService.GetEloDelta(
+            player.Name,
+            player.Elo,
+            7);
+
+    historyService.AddSnapshot(
+        player.Name,
+        player.Elo);
+}
+
+await historyService.SaveAsync();
+
+
+// --------------------------------------------------
+// SORTERING
+// --------------------------------------------------
+
+var orderedPlayers =
+    players
+        .OrderByDescending(
+            x => x.Elo)
+        .ToList();
+
+
+// --------------------------------------------------
+// TILT WATCH
+// --------------------------------------------------
+
+// Flest förluster senaste 10.
+// Vid lika antal:
+// 1. lägst winrate
+// 2. lägst K/D
+
+var tiltWatchPlayer =
+    orderedPlayers
+        .OrderByDescending(
+            x => x.Losses)
+        .ThenBy(
+            x => x.WinRate)
+        .ThenBy(
+            x => x.Kd)
+        .FirstOrDefault();
+
+
+// --------------------------------------------------
+// HUVUDTAVLA
+// --------------------------------------------------
+
+var message =
+    BuildLeaderboard(
+        orderedPlayers);
+
+var returnedBoardMessageId =
+    await discordClient.PublishBoardAsync(
+        content: message,
+        messageId: discordMessageId);
+
+
+// --------------------------------------------------
+// TILT WATCH
+// --------------------------------------------------
+
+string? returnedTiltWatchMessageId = null;
+
+if (tiltWatchPlayer is not null)
+{
+    var tiltDescription =
+        $"**{tiltWatchPlayer.Name} är under bevakning.**\n" +
+        $"📉 Flest förluster just nu: " +
+        $"**{tiltWatchPlayer.Losses} av " +
+        $"{tiltWatchPlayer.Matches} matcher**.\n\n" +
+        $"👮 Fena utför dagens Tilt Watch.";
+
+    returnedTiltWatchMessageId =
+        await discordClient.PublishAwardWithImageAsync(
+            title: "🧊 TILT WATCH",
+            description: tiltDescription,
+            imagePath: "assets/fena.jpg",
+            messageId: tiltWatchMessageId);
+}
+
+
+// --------------------------------------------------
+// KLART
+// --------------------------------------------------
+
+Console.WriteLine();
+Console.WriteLine(
+    "✅ FACEIT-tavlan är klar.");
+
+if (string.IsNullOrWhiteSpace(
+        discordMessageId))
+{
+    Console.WriteLine();
+    Console.WriteLine(
+        "Spara följande som DISCORD_MESSAGE_ID:");
+
+    Console.WriteLine(
+        returnedBoardMessageId);
+}
+
+if (string.IsNullOrWhiteSpace(
+        tiltWatchMessageId))
+{
+    Console.WriteLine();
+    Console.WriteLine(
+        "Spara följande som TILT_WATCH_MESSAGE_ID:");
+
+    Console.WriteLine(
+        returnedTiltWatchMessageId);
+}
+
+
+// --------------------------------------------------
+// STATISTIK
+// --------------------------------------------------
+
+static CalculatedStats CalculateStats(
+    FaceitStatsResponse response)
+{
+    var matches =
+        response.Items
+            .Select(x => x.Stats)
+            .ToList();
+
+    if (matches.Count == 0)
+    {
+        return new CalculatedStats();
+    }
+
+    var wins =
+        matches.Count(
+            x => x.Result == "1");
+
+    var losses =
+        matches.Count - wins;
+
+    var kills =
+        matches.Sum(
+            x => ToInt(x.Kills));
+
+    var deaths =
+        matches.Sum(
+            x => ToInt(x.Deaths));
+
+    var headshots =
+        matches.Sum(
+            x => ToInt(x.Headshots));
+
+    var mvps =
+        matches.Sum(
+            x => ToInt(x.Mvps));
+
+    var tripleKills =
+        matches.Sum(
+            x => ToInt(x.TripleKills));
+
+    var quadroKills =
+        matches.Sum(
+            x => ToInt(x.QuadroKills));
+
+    var pentaKills =
+        matches.Sum(
+            x => ToInt(x.PentaKills));
+
+    var averageKills =
+        (double)kills /
+        matches.Count;
+
+    var kd =
+        deaths == 0
+            ? kills
+            : (double)kills / deaths;
+
+    var headshotPercentage =
+        kills == 0
+            ? 0
+            : ((double)headshots / kills) * 100;
+
+    var adr =
+        matches.Average(
+            x => ToDouble(x.Adr));
+
+    var winRate =
+        ((double)wins /
+         matches.Count) * 100;
+
+    var streak =
+        CalculateStreak(
+            matches);
+
+    return new CalculatedStats
+    {
+        Matches =
+            matches.Count,
+
+        Wins =
+            wins,
+
+        Losses =
+            losses,
+
+        TotalKills =
+            kills,
+
+        TotalMvps =
+            mvps,
+
+        WinRate =
+            winRate,
+
+        Kd =
+            kd,
+
+        AverageKills =
+            averageKills,
+
+        Adr =
+            adr,
+
+        HeadshotPercentage =
+            headshotPercentage,
+
+        Streak =
+            streak,
+
+        TripleKills =
+            tripleKills,
+
+        QuadroKills =
+            quadroKills,
+
+        PentaKills =
+            pentaKills
+    };
+}
+
+static int CalculateStreak(
+    IReadOnlyList<FaceitMatchStats> matches)
+{
+    if (matches.Count == 0)
+        return 0;
+
+    var firstResult =
+        matches[0].Result;
+
+    var count = 0;
+
+    foreach (var match in matches)
+    {
+        if (match.Result != firstResult)
+            break;
+
+        count++;
+    }
+
+    return firstResult == "1"
+        ? count
+        : -count;
+}
+
+static int ToInt(
+    string? value)
+{
+    return int.TryParse(
+        value,
+        NumberStyles.Any,
+        CultureInfo.InvariantCulture,
+        out var result)
+            ? result
+            : 0;
+}
+
+static double ToDouble(
+    string? value)
+{
+    return double.TryParse(
+        value,
+        NumberStyles.Any,
+        CultureInfo.InvariantCulture,
+        out var result)
+            ? result
+            : 0;
+}
+
+
+// --------------------------------------------------
+// DISCORD-TAVLA
+// --------------------------------------------------
+
+static string BuildLeaderboard(
+    IReadOnlyList<PlayerLeaderboardEntry> players)
+{
+    var sb =
+        new StringBuilder();
+
+    for (var i = 0;
+         i < players.Count;
+         i++)
+    {
+        var player =
+            players[i];
+
+        var medal =
+            i switch
+            {
+                0 => "🥇",
+                1 => "🥈",
+                2 => "🥉",
+                _ => "🔹"
+            };
+
+        sb.AppendLine(
+            $"{medal} **{player.Name}**");
+
+        sb.AppendLine(
+            $"> LVL **{player.Level}** • " +
+            $"**{player.Elo} ELO** " +
+            $"{FormatEloDelta(player.EloDelta7Days)}");
+
+        sb.AppendLine(
+            $"> 📊 {player.Wins}V-{player.Losses}F • " +
+            $"**{player.WinRate:0}% vinst** • " +
+            $"⚔️ {player.Kd:0.00} K/D");
+
+        sb.AppendLine(
+            $"> 💣 {player.AverageKills:0.0} AVG • " +
+            $"💥 {player.Adr:0.0} ADR • " +
+            $"🎯 {player.HeadshotPercentage:0}% HS" +
+            $"{FormatStreak(player.Streak)}");
+
+        sb.AppendLine();
+    }
+
+
+    // --------------------------------------------------
+    // POLISRAPPORT
+    // --------------------------------------------------
+
+    sb.AppendLine(
+        "━━━━━━━━━━━━━━━━━━");
+
+    sb.AppendLine(
+        "### 🏅 GRISRAPPORT");
+
+    sb.AppendLine();
+
+    var eloKing =
+        players.MaxBy(
+            x => x.Elo)!;
+
+    var bestKd =
+        players.MaxBy(
+            x => x.Kd)!;
+
+    var bestWinRate =
+        players.MaxBy(
+            x => x.WinRate)!;
+
+    var aimKing =
+        players.MaxBy(
+            x => x.HeadshotPercentage)!;
+
+    var fragMachine =
+        players.MaxBy(
+            x => x.AverageKills)!;
+
+    var damageDealer =
+        players.MaxBy(
+            x => x.Adr)!;
+
+    var mvpFarmer =
+        players.MaxBy(
+            x => x.TotalMvps)!;
+
+    var walkingDonation =
+        players.MinBy(
+            x => x.Kd)!;
+
+    var lowestElo =
+        players.MinBy(
+            x => x.Elo)!;
+
+    var hottest =
+        players
+            .Where(
+                x => x.Streak >= 2)
+            .OrderByDescending(
+                x => x.Streak)
+            .FirstOrDefault();
+
+    var playersWithHistory =
+        players
+            .Where(
+                x => x.EloDelta7Days.HasValue)
+            .ToList();
+
+    var stonks =
+        playersWithHistory
+            .OrderByDescending(
+                x => x.EloDelta7Days)
+            .FirstOrDefault();
+
+    var eloDonator =
+        playersWithHistory
+            .OrderBy(
+                x => x.EloDelta7Days)
+            .FirstOrDefault();
+
+    var lowestHs =
+    players
+        .OrderBy(x => x.HeadshotPercentage)
+        .ThenBy(x => x.Kd)
+        .First();
+
+var lowestMvps =
+    players
+        .OrderBy(x => x.TotalMvps)
+        .ThenBy(x => x.Kd)
+        .First();
+
+var lowestWinRate =
+    players
+        .OrderBy(x => x.WinRate)
+        .ThenBy(x => x.Kd)
+        .First();
+
+    // --------------------------------------------------
+    // UTMÄRKELSER
+    // --------------------------------------------------
+
+    AppendAward(
+        sb,
+        "👑",
+        "ELO-KUNGEN",
+        $"{eloKing.Name} — {eloKing.Elo} ELO");
+
+    AppendAward(
+        sb,
+        "⚔️",
+        "K/D-DEMONEN",
+        $"{bestKd.Name} — {bestKd.Kd:0.00} K/D");
+
+    AppendAward(
+        sb,
+        "📈",
+        "VINSTMASKINEN",
+        $"{bestWinRate.Name} — {bestWinRate.WinRate:0}% vinst");
+
+    AppendAward(
+        sb,
+        "🎯",
+        "AIM-KUNGEN",
+        $"{aimKing.Name} — {aimKing.HeadshotPercentage:0}% HS");
+
+    AppendAward(
+        sb,
+        "💣",
+        "FRAGMASKINEN",
+        $"{fragMachine.Name} — {fragMachine.AverageKills:0.0} kills/match");
+
+    AppendAward(
+        sb,
+        "💥",
+        "SKADEMASKINEN",
+        $"{damageDealer.Name} — {damageDealer.Adr:0.0} ADR");
+
+    AppendAward(
+        sb,
+        "⭐",
+        "MVP-BONDEN",
+        $"{mvpFarmer.Name} — {mvpFarmer.TotalMvps} MVP");
+
+    AppendAward(
+    sb,
+    "🙈",
+    "SIKTET SAKNAS eller AWPER?",
+    $"{lowestHs.Name} — {lowestHs.HeadshotPercentage:0}% HS");
+
+    AppendAward(
+        sb,
+        "⭐",
+        "MVP-TORKA",
+        $"{lowestMvps.Name} — {lowestMvps.TotalMvps} MVP");
+
+    AppendAward(
+        sb,
+        "🚨",
+        "FORMKRIS",
+        $"{lowestWinRate.Name} — {lowestWinRate.WinRate:0}% vinst");
+
+    if (stonks is not null &&
+        stonks.EloDelta7Days > 0)
+    {
+        AppendAward(
+            sb,
+            "🚀",
+            "STONKS",
+            $"{stonks.Name} — +{stonks.EloDelta7Days} ELO");
+    }
+
+    if (eloDonator is not null &&
+        eloDonator.EloDelta7Days < 0)
+    {
+        AppendAward(
+            sb,
+            "📉",
+            "ELO-DONATORN",
+            $"{eloDonator.Name} — {eloDonator.EloDelta7Days} ELO");
+    }
+
+    if (hottest is not null)
+    {
+        AppendAward(
+            sb,
+            "🔥",
+            "GLÖDHET",
+            $"{hottest.Name} — {hottest.Streak} raka vinster");
+    }
+
+    // AppendAward(
+    //     sb,
+    //     "💀",
+    //     "VANDRANDE DONATIONEN",
+    //     $"{walkingDonation.Name} — {walkingDonation.Kd:0.00} K/D");
+
+    AppendAward(
+        sb,
+        "🚓",
+        "UNDER UTREDNING",
+        $"{lowestElo.Name} — {lowestElo.Elo} ELO");
+
+
+    // --------------------------------------------------
+    // FOOTER
+    // --------------------------------------------------
+
+    sb.AppendLine(
+        "*Statistik baserad på de senaste 10 FACEIT-matcherna*");
+
+    sb.AppendLine();
+
+    sb.AppendLine(
+        $"🕐 Uppdaterad " +
+        $"<t:{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}:R>");
+
+    return sb.ToString();
+}
+
+static void AppendAward(
+    StringBuilder sb,
+    string emoji,
+    string title,
+    string value)
+{
+    sb.AppendLine(
+        $"{emoji} **{title}**");
+
+    sb.AppendLine(
+        value);
+
+    sb.AppendLine();
+}
+
+static string FormatEloDelta(
+    int? delta)
+{
+    if (delta is null)
+        return "• 🆕 spårning startad";
+
+    if (delta > 0)
+        return $"• 📈 **+{delta}** på 7 dagar";
+
+    if (delta < 0)
+        return $"• 📉 **{delta}** på 7 dagar";
+
+    return "• ➖ **0** på 7 dagar";
+}
+
+static string FormatStreak(
+    int streak)
+{
+    if (streak >= 2)
+    {
+        return
+            $" • 🔥 {streak} raka vinster";
+    }
+
+    if (streak <= -2)
+    {
+        return
+            $" • 🧊 {Math.Abs(streak)} raka förluster";
+    }
+
+    return "";
+}
+
+
+// --------------------------------------------------
+// INTERNA MODELLER
+// --------------------------------------------------
+
+internal sealed class CalculatedStats
+{
+    public int Matches { get; init; }
+
+    public int Wins { get; init; }
+
+    public int Losses { get; init; }
+
+    public int TotalKills { get; init; }
+
+    public int TotalMvps { get; init; }
+
+    public double WinRate { get; init; }
+
+    public double Kd { get; init; }
+
+    public double AverageKills { get; init; }
+
+    public double Adr { get; init; }
+
+    public double HeadshotPercentage { get; init; }
+
+    public int Streak { get; init; }
+
+    public int TripleKills { get; init; }
+
+    public int QuadroKills { get; init; }
+
+    public int PentaKills { get; init; }
+}
+
+internal sealed class PlayerLeaderboardEntry
+{
+    public string Name { get; init; } = "";
+
+    public int Elo { get; init; }
+
+    public int Level { get; init; }
+
+    public int? EloDelta7Days { get; set; }
+
+    public int Matches { get; init; }
+
+    public int Wins { get; init; }
+
+    public int Losses { get; init; }
+
+    public double WinRate { get; init; }
+
+    public double Kd { get; init; }
+
+    public double AverageKills { get; init; }
+
+    public double Adr { get; init; }
+
+    public double HeadshotPercentage { get; init; }
+
+    public int Streak { get; init; }
+
+    public int TotalKills { get; init; }
+
+    public int TotalMvps { get; init; }
+
+    public int TripleKills { get; init; }
+
+    public int QuadroKills { get; init; }
+
+    public int PentaKills { get; init; }
+}
