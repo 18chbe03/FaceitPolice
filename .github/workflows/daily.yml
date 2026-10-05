@@ -2,8 +2,8 @@ name: Daily Faceit Police
 
 on:
   schedule:
-    # 07:00 UTC varje dag
-    - cron: "0 7 * * *"
+    # 17:00 UTC varje dag
+    - cron: "0 17 * * *"
 
   workflow_dispatch:
 
@@ -28,3 +28,9 @@ jobs:
 
       - name: Run
         run: dotnet run --configuration Release
+        env:
+          FACEIT_API_KEY: ${{ secrets.FACEIT_API_KEY }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DISCORD_MESSAGE_ID: ${{ vars.DISCORD_MESSAGE_ID }}
+          TILT_WATCH_MESSAGE_ID: ${{ vars.TILT_WATCH_MESSAGE_ID }}
+          FACEIT_PLAYERS: ${{ vars.FACEIT_PLAYERS }}
