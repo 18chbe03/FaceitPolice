@@ -27,15 +27,15 @@ var discordWebhook =
     ?? throw new InvalidOperationException(
         "DISCORD_WEBHOOK_URL saknas.");
 
-var discordMessageId =
+var configuredBoardMessageId =
     Environment.GetEnvironmentVariable(
         "DISCORD_MESSAGE_ID");
 
-var tiltWatchMessageId =
+var configuredTiltWatchMessageId =
     Environment.GetEnvironmentVariable(
         "TILT_WATCH_MESSAGE_ID");
 
-var mapStatsMessageId =
+var configuredMapStatsMessageId =
     Environment.GetEnvironmentVariable(
         "MAP_STATS_MESSAGE_ID");
 
@@ -68,7 +68,33 @@ var historyService =
 var mapStatsService =
     new MapStatsService();
 
+var discordStateService =
+    new DiscordMessageStateService();
+
+
+// --------------------------------------------------
+// LADDA STATE
+// --------------------------------------------------
+
 await historyService.LoadAsync();
+
+var discordState =
+    await discordStateService.LoadAsync();
+
+
+// State-filen vinner över env.
+// Env används som fallback första gången.
+var boardMessageId =
+    discordState.BoardMessageId
+    ?? configuredBoardMessageId;
+
+var mapStatsMessageId =
+    discordState.MapStatsMessageId
+    ?? configuredMapStatsMessageId;
+
+var tiltWatchMessageId =
+    discordState.TiltWatchMessageId
+    ?? configuredTiltWatchMessageId;
 
 
 // --------------------------------------------------
@@ -116,8 +142,7 @@ foreach (var nickname in nicknames)
             continue;
         }
 
-        // Vi hämtar 50 matcher EN gång.
-        // De används till kartstatistik.
+        // Hämta 50 matcher en gång.
         var fullStats =
             await faceitClient.GetRecentStatsAsync(
                 player.PlayerId,
@@ -126,8 +151,7 @@ foreach (var nickname in nicknames)
         allPlayerStats.Add(
             fullStats);
 
-        // Vanlig ranking ska fortfarande endast
-        // baseras på de senaste 10.
+        // Ranking baseras endast på senaste 10.
         var recentStats =
             TakeFirstMatches(
                 fullStats,
@@ -255,10 +279,6 @@ var mapStatsMessage =
 // TILT WATCH
 // --------------------------------------------------
 
-// Flest förluster senaste 10.
-// Vid lika:
-// lägst winrate och sedan lägst K/D.
-
 var tiltWatchPlayer =
     orderedPlayers
         .OrderByDescending(
@@ -271,40 +291,51 @@ var tiltWatchPlayer =
 
 
 // --------------------------------------------------
-// BYGG HUVUDTAVLAN
+// HUVUDTAVLA
 // --------------------------------------------------
 
 var leaderboardMessage =
     BuildLeaderboard(
         orderedPlayers);
 
-
-// --------------------------------------------------
-// PUBLICERA HUVUDTAVLA
-// --------------------------------------------------
-
 var returnedBoardMessageId =
     await discordClient.PublishBoardAsync(
-        content: leaderboardMessage,
-        messageId: discordMessageId);
+        content:
+            leaderboardMessage,
+        messageId:
+            boardMessageId);
+
+discordState.BoardMessageId =
+    returnedBoardMessageId;
+
+await discordStateService.SaveAsync(
+    discordState);
 
 
 // --------------------------------------------------
-// PUBLICERA KARTSTATISTIK
+// KARTSTATISTIK
 // --------------------------------------------------
 
 var returnedMapStatsMessageId =
     await discordClient.PublishMapStatsAsync(
-        content: mapStatsMessage,
-        messageId: mapStatsMessageId);
+        content:
+            mapStatsMessage,
+        messageId:
+            mapStatsMessageId);
+
+discordState.MapStatsMessageId =
+    returnedMapStatsMessageId;
+
+await discordStateService.SaveAsync(
+    discordState);
 
 
 // --------------------------------------------------
-// PUBLICERA TILT WATCH
+// TILT WATCH
 // --------------------------------------------------
 
 string? returnedTiltWatchMessageId =
-    null;
+    tiltWatchMessageId;
 
 if (tiltWatchPlayer is not null)
 {
@@ -312,14 +343,24 @@ if (tiltWatchPlayer is not null)
         $"**Tiltvarning: {tiltWatchPlayer.Name}**\n" +
         $"📉 **{tiltWatchPlayer.Losses} förluster på " +
         $"{tiltWatchPlayer.Matches} matcher** — " +
-        $"⚠️ Ytterligare matcher kan leda till akut övertilt.";
+        $"⚠️ Ytterligare matcher kan leda till tilt.";
 
     returnedTiltWatchMessageId =
         await discordClient.PublishAwardWithImageAsync(
-            title: "🧊 TILT WATCH",
-            description: tiltDescription,
-            imagePath: "assets/fena.jpg",
-            messageId: tiltWatchMessageId);
+            title:
+                "🧊 TILT WATCH",
+            description:
+                tiltDescription,
+            imagePath:
+                "assets/fena.jpg",
+            messageId:
+                tiltWatchMessageId);
+
+    discordState.TiltWatchMessageId =
+        returnedTiltWatchMessageId;
+
+    await discordStateService.SaveAsync(
+        discordState);
 }
 
 
@@ -328,45 +369,24 @@ if (tiltWatchPlayer is not null)
 // --------------------------------------------------
 
 Console.WriteLine();
+
 Console.WriteLine(
     "✅ FACEIT-tavlan är klar.");
 
-if (string.IsNullOrWhiteSpace(
-        discordMessageId))
-{
-    Console.WriteLine();
-    Console.WriteLine(
-        "Spara följande som DISCORD_MESSAGE_ID:");
+Console.WriteLine();
 
-    Console.WriteLine(
-        returnedBoardMessageId);
-}
+Console.WriteLine(
+    $"Board ID: {returnedBoardMessageId}");
 
-if (string.IsNullOrWhiteSpace(
-        tiltWatchMessageId))
-{
-    Console.WriteLine();
-    Console.WriteLine(
-        "Spara följande som TILT_WATCH_MESSAGE_ID:");
+Console.WriteLine(
+    $"Map ID: {returnedMapStatsMessageId}");
 
-    Console.WriteLine(
-        returnedTiltWatchMessageId);
-}
-
-if (string.IsNullOrWhiteSpace(
-        mapStatsMessageId))
-{
-    Console.WriteLine();
-    Console.WriteLine(
-        "Spara följande som MAP_STATS_MESSAGE_ID:");
-
-    Console.WriteLine(
-        returnedMapStatsMessageId);
-}
+Console.WriteLine(
+    $"Tilt Watch ID: {returnedTiltWatchMessageId}");
 
 
 // --------------------------------------------------
-// TA UT SENASTE X MATCHER
+// SENASTE X MATCHER
 // --------------------------------------------------
 
 static FaceitStatsResponse TakeFirstMatches(
@@ -536,7 +556,7 @@ static int CalculateStreak(
 
 
 // --------------------------------------------------
-// HUVUDRANKING
+// POWER RANKING
 // --------------------------------------------------
 
 static string BuildLeaderboard(
@@ -582,11 +602,6 @@ static string BuildLeaderboard(
 
         sb.AppendLine();
     }
-
-
-    // --------------------------------------------------
-    // POLISRAPPORT
-    // --------------------------------------------------
 
     sb.AppendLine(
         "━━━━━━━━━━━━━━━━━━");
@@ -669,7 +684,6 @@ static string BuildLeaderboard(
             .OrderBy(
                 x => x.EloDelta7Days)
             .FirstOrDefault();
-
 
     AppendAward(
         sb,
@@ -810,15 +824,32 @@ static string BuildMapStatistics(
     var sb =
         new StringBuilder();
 
-    if (maps.Count == 0)
+    // Säkerställ ordningen även här.
+    var orderedMaps =
+        maps
+            .OrderByDescending(
+                x => x.WinRate)
+            .ThenByDescending(
+                x => x.UniqueMatches)
+            .ThenBy(
+                x => x.Map)
+            .ToList();
+
+    if (orderedMaps.Count == 0)
     {
         sb.AppendLine(
-            "Ingen kartstatistik kunde hämtas.");
+            "Ingen karta har minst 10 unika matcher ännu.");
+
+        sb.AppendLine();
+
+        sb.AppendLine(
+            $"🕐 Uppdaterad " +
+            $"<t:{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}:R>");
 
         return sb.ToString();
     }
 
-    foreach (var map in maps)
+    foreach (var map in orderedMaps)
     {
         sb.AppendLine(
             $"### 🗺️ {map.Map}");
@@ -840,50 +871,25 @@ static string BuildMapStatistics(
         sb.AppendLine();
     }
 
-
-    // Vi kräver lite data innan en karta
-    // får vinna/bli förnedrad.
-    const int minimumAppearancesForAward =
-        10;
-
-    var eligibleMaps =
-        maps
-            .Where(
-                x =>
-                    x.PlayerAppearances >=
-                    minimumAppearancesForAward)
-            .ToList();
-
-    // Om projektet är helt nytt och ingen karta
-    // har 10 resultat ännu använder vi all data.
-    if (eligibleMaps.Count == 0)
-    {
-        eligibleMaps =
-            maps.ToList();
-    }
-
     var homeMap =
-        eligibleMaps.MaxBy(
-            x => x.WinRate)!;
+        orderedMaps.First();
 
     var banThis =
-        eligibleMaps.MinBy(
-            x => x.WinRate)!;
+        orderedMaps.Last();
 
     var bloodbath =
-        eligibleMaps.MaxBy(
+        orderedMaps.MaxBy(
             x => x.Adr)!;
 
     var hsParadise =
-        eligibleMaps.MaxBy(
+        orderedMaps.MaxBy(
             x => x.HeadshotPercentage)!;
-
 
     sb.AppendLine(
         "━━━━━━━━━━━━━━━━━━");
 
     sb.AppendLine(
-        "### 🏅 Kart-Statistik");
+        "### 🏅 KARTSTATISTIK");
 
     sb.AppendLine();
 
@@ -922,9 +928,17 @@ static string BuildMapStatistics(
     sb.AppendLine();
 
     sb.AppendLine(
-        "*Om flera av gruppens spelare är med i samma match " +
-        "räknas matchen en gång under \"unika matcher\", " +
-        "men varje spelares prestation räknas i gruppstatistiken. (maps med mindre än 10 spelade ignoreras).*");
+        "*Endast kartor med minst 10 unika matcher visas.*");
+
+    sb.AppendLine(
+        "*Kartorna är sorterade från högst till lägst winrate.*");
+
+    sb.AppendLine();
+
+    sb.AppendLine(
+        "*Om flera spelare i gruppen spelar samma match " +
+        "räknas den som en unik match, men varje spelares " +
+        "prestation räknas i gruppstatistiken.*");
 
     sb.AppendLine();
 

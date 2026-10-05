@@ -5,6 +5,8 @@ namespace FaceitPolice.Services;
 
 public sealed class MapStatsService
 {
+    private const int MinimumUniqueMatches = 10;
+
     public IReadOnlyList<MapStatistics> Calculate(
         IEnumerable<FaceitStatsResponse> playerStats)
     {
@@ -26,10 +28,23 @@ public sealed class MapStatsService
                 x => NormalizeMapName(x.Map),
                 StringComparer.OrdinalIgnoreCase)
             .Select(CalculateMap)
+
+            // Minst 10 UNIKA matcher på kartan.
+            .Where(x =>
+                x.UniqueMatches >= MinimumUniqueMatches)
+
+            // Bäst winrate högst upp.
             .OrderByDescending(
-                x => x.PlayerAppearances)
+                x => x.WinRate)
+
+            // Vid lika winrate:
+            // mest underlag först.
+            .ThenByDescending(
+                x => x.UniqueMatches)
+
             .ThenBy(
                 x => x.Map)
+
             .ToList();
     }
 
@@ -110,15 +125,15 @@ public sealed class MapStatsService
                 : (double)kills /
                   appearances;
 
-        // Mer korrekt än att bara ta snittet
-        // av varje match-ADR.
         var adr =
-            rounds > 0 && damage > 0
-                ? (double)damage / rounds
+            rounds > 0 &&
+            damage > 0
+                ? (double)damage /
+                  rounds
                 : rows.Average(
                     x => ToDouble(x.Adr));
 
-        var headshotPercentage =
+        var hsPercentage =
             kills == 0
                 ? 0
                 : (double)headshots /
@@ -184,7 +199,7 @@ public sealed class MapStatsService
                 adr,
 
             HeadshotPercentage =
-                headshotPercentage,
+                hsPercentage,
 
             MvpsPerMatch =
                 mvpsPerMatch
