@@ -4,7 +4,15 @@ using FaceitPolice.Models;
 using FaceitPolice.Services;
 
 // --------------------------------------------------
-// KONFIGURATION
+// INSTÄLLNINGAR
+// --------------------------------------------------
+
+const int PlayerStatsMatchLimit = 10;
+const int MapStatsMatchLimit = 50;
+
+
+// --------------------------------------------------
+// ENVIRONMENT VARIABLES
 // --------------------------------------------------
 
 var faceitApiKey =
@@ -27,10 +35,19 @@ var tiltWatchMessageId =
     Environment.GetEnvironmentVariable(
         "TILT_WATCH_MESSAGE_ID");
 
+var mapStatsMessageId =
+    Environment.GetEnvironmentVariable(
+        "MAP_STATS_MESSAGE_ID");
+
 var playersConfig =
     Environment.GetEnvironmentVariable(
         "FACEIT_PLAYERS")
     ?? "chrillebille,BOSSEN-_-,ibbann,roevklo,raveleif,DILLicious,-__SMILE__-,fenUH,Willyo,Frodefrode3,vicyo,hebben8or,-starscream";
+
+
+// --------------------------------------------------
+// SERVICES
+// --------------------------------------------------
 
 using var httpClient =
     new HttpClient();
@@ -48,6 +65,9 @@ var discordClient =
 var historyService =
     new EloHistoryService();
 
+var mapStatsService =
+    new MapStatsService();
+
 await historyService.LoadAsync();
 
 
@@ -64,6 +84,9 @@ var nicknames =
 var players =
     new List<PlayerLeaderboardEntry>();
 
+var allPlayerStats =
+    new List<FaceitStatsResponse>();
+
 foreach (var nickname in nicknames)
 {
     try
@@ -78,7 +101,7 @@ foreach (var nickname in nicknames)
         if (player is null)
         {
             Console.WriteLine(
-                $"Ingen spelare hittades för {nickname}.");
+                $"Ingen FACEIT-spelare hittades för {nickname}.");
 
             continue;
         }
@@ -93,39 +116,65 @@ foreach (var nickname in nicknames)
             continue;
         }
 
-        var stats =
+        // Vi hämtar 50 matcher EN gång.
+        // De används till kartstatistik.
+        var fullStats =
             await faceitClient.GetRecentStatsAsync(
                 player.PlayerId,
-                10);
+                MapStatsMatchLimit);
+
+        allPlayerStats.Add(
+            fullStats);
+
+        // Vanlig ranking ska fortfarande endast
+        // baseras på de senaste 10.
+        var recentStats =
+            TakeFirstMatches(
+                fullStats,
+                PlayerStatsMatchLimit);
 
         var calculated =
-            CalculateStats(stats);
+            CalculateStats(
+                recentStats);
 
         players.Add(
             new PlayerLeaderboardEntry
             {
-                Name = player.Nickname,
+                Name =
+                    player.Nickname,
 
-                Elo = cs2.Elo,
-                Level = cs2.SkillLevel,
+                Elo =
+                    cs2.Elo,
 
-                Matches = calculated.Matches,
-                Wins = calculated.Wins,
-                Losses = calculated.Losses,
+                Level =
+                    cs2.SkillLevel,
 
-                WinRate = calculated.WinRate,
+                Matches =
+                    calculated.Matches,
 
-                Kd = calculated.Kd,
+                Wins =
+                    calculated.Wins,
+
+                Losses =
+                    calculated.Losses,
+
+                WinRate =
+                    calculated.WinRate,
+
+                Kd =
+                    calculated.Kd,
 
                 AverageKills =
                     calculated.AverageKills,
 
-                Adr = calculated.Adr,
+                Adr =
+                    calculated.Adr,
 
                 HeadshotPercentage =
                     calculated.HeadshotPercentage,
 
-                Streak = calculated.Streak,
+                Streak =
+                    calculated.Streak,
 
                 TotalKills =
                     calculated.TotalKills,
@@ -178,7 +227,7 @@ await historyService.SaveAsync();
 
 
 // --------------------------------------------------
-// SORTERING
+// RANKING
 // --------------------------------------------------
 
 var orderedPlayers =
@@ -189,13 +238,26 @@ var orderedPlayers =
 
 
 // --------------------------------------------------
+// KARTSTATISTIK
+// --------------------------------------------------
+
+var mapStats =
+    mapStatsService.Calculate(
+        allPlayerStats);
+
+var mapStatsMessage =
+    BuildMapStatistics(
+        mapStats,
+        MapStatsMatchLimit);
+
+
+// --------------------------------------------------
 // TILT WATCH
 // --------------------------------------------------
 
 // Flest förluster senaste 10.
-// Vid lika antal:
-// 1. lägst winrate
-// 2. lägst K/D
+// Vid lika:
+// lägst winrate och sedan lägst K/D.
 
 var tiltWatchPlayer =
     orderedPlayers
@@ -209,33 +271,49 @@ var tiltWatchPlayer =
 
 
 // --------------------------------------------------
-// HUVUDTAVLA
+// BYGG HUVUDTAVLAN
 // --------------------------------------------------
 
-var message =
+var leaderboardMessage =
     BuildLeaderboard(
         orderedPlayers);
 
+
+// --------------------------------------------------
+// PUBLICERA HUVUDTAVLA
+// --------------------------------------------------
+
 var returnedBoardMessageId =
     await discordClient.PublishBoardAsync(
-        content: message,
+        content: leaderboardMessage,
         messageId: discordMessageId);
 
 
 // --------------------------------------------------
-// TILT WATCH
+// PUBLICERA KARTSTATISTIK
 // --------------------------------------------------
 
-string? returnedTiltWatchMessageId = null;
+var returnedMapStatsMessageId =
+    await discordClient.PublishMapStatsAsync(
+        content: mapStatsMessage,
+        messageId: mapStatsMessageId);
+
+
+// --------------------------------------------------
+// PUBLICERA TILT WATCH
+// --------------------------------------------------
+
+string? returnedTiltWatchMessageId =
+    null;
 
 if (tiltWatchPlayer is not null)
 {
     var tiltDescription =
-        $"**{tiltWatchPlayer.Name} är under bevakning!**\n" +
-        $"📉 Flest förluster just nu: " +
-        $"**{tiltWatchPlayer.Losses} av " +
-        $"{tiltWatchPlayer.Matches} matcher**.\n\n" +
-        $"⚠️ Ytterligare matcher kan leda till tilt.";
+        $"**{tiltWatchPlayer.Name} befinner sig i kritiskt tilt-tillstånd.**\n" +
+        $"📉 **{tiltWatchPlayer.Losses} förluster på " +
+        $"{tiltWatchPlayer.Matches} matcher** — " +
+        $"tilten är inte längre tillfällig, den är strukturell.\n\n" +
+        $"⚠️ Ytterligare matcher kan leda till akut övertilt.";
 
     returnedTiltWatchMessageId =
         await discordClient.PublishAwardWithImageAsync(
@@ -276,9 +354,38 @@ if (string.IsNullOrWhiteSpace(
         returnedTiltWatchMessageId);
 }
 
+if (string.IsNullOrWhiteSpace(
+        mapStatsMessageId))
+{
+    Console.WriteLine();
+    Console.WriteLine(
+        "Spara följande som MAP_STATS_MESSAGE_ID:");
+
+    Console.WriteLine(
+        returnedMapStatsMessageId);
+}
+
 
 // --------------------------------------------------
-// STATISTIK
+// TA UT SENASTE X MATCHER
+// --------------------------------------------------
+
+static FaceitStatsResponse TakeFirstMatches(
+    FaceitStatsResponse response,
+    int count)
+{
+    return new FaceitStatsResponse
+    {
+        Items =
+            response.Items
+                .Take(count)
+                .ToList()
+    };
+}
+
+
+// --------------------------------------------------
+// SPELARSTATISTIK
 // --------------------------------------------------
 
 static CalculatedStats CalculateStats(
@@ -336,20 +443,22 @@ static CalculatedStats CalculateStats(
     var kd =
         deaths == 0
             ? kills
-            : (double)kills / deaths;
+            : (double)kills /
+              deaths;
 
     var headshotPercentage =
         kills == 0
             ? 0
-            : ((double)headshots / kills) * 100;
+            : (double)headshots /
+              kills * 100;
 
     var adr =
         matches.Average(
             x => ToDouble(x.Adr));
 
     var winRate =
-        ((double)wins /
-         matches.Count) * 100;
+        (double)wins /
+        matches.Count * 100;
 
     var streak =
         CalculateStreak(
@@ -410,7 +519,8 @@ static int CalculateStreak(
     var firstResult =
         matches[0].Result;
 
-    var count = 0;
+    var count =
+        0;
 
     foreach (var match in matches)
     {
@@ -425,33 +535,9 @@ static int CalculateStreak(
         : -count;
 }
 
-static int ToInt(
-    string? value)
-{
-    return int.TryParse(
-        value,
-        NumberStyles.Any,
-        CultureInfo.InvariantCulture,
-        out var result)
-            ? result
-            : 0;
-}
-
-static double ToDouble(
-    string? value)
-{
-    return double.TryParse(
-        value,
-        NumberStyles.Any,
-        CultureInfo.InvariantCulture,
-        out var result)
-            ? result
-            : 0;
-}
-
 
 // --------------------------------------------------
-// DISCORD-TAVLA
+// HUVUDRANKING
 // --------------------------------------------------
 
 static string BuildLeaderboard(
@@ -507,7 +593,7 @@ static string BuildLeaderboard(
         "━━━━━━━━━━━━━━━━━━");
 
     sb.AppendLine(
-        "### 🏅 GRISRAPPORT");
+        "### 🏅 POLISRAPPORT");
 
     sb.AppendLine();
 
@@ -543,6 +629,18 @@ static string BuildLeaderboard(
         players.MinBy(
             x => x.Kd)!;
 
+    var lowestHs =
+        players.MinBy(
+            x => x.HeadshotPercentage)!;
+
+    var lowestMvps =
+        players.MinBy(
+            x => x.TotalMvps)!;
+
+    var lowestWinRate =
+        players.MinBy(
+            x => x.WinRate)!;
+
     var lowestElo =
         players.MinBy(
             x => x.Elo)!;
@@ -573,27 +671,6 @@ static string BuildLeaderboard(
                 x => x.EloDelta7Days)
             .FirstOrDefault();
 
-    var lowestHs =
-    players
-        .OrderBy(x => x.HeadshotPercentage)
-        .ThenBy(x => x.Kd)
-        .First();
-
-var lowestMvps =
-    players
-        .OrderBy(x => x.TotalMvps)
-        .ThenBy(x => x.Kd)
-        .First();
-
-var lowestWinRate =
-    players
-        .OrderBy(x => x.WinRate)
-        .ThenBy(x => x.Kd)
-        .First();
-
-    // --------------------------------------------------
-    // UTMÄRKELSER
-    // --------------------------------------------------
 
     AppendAward(
         sb,
@@ -611,49 +688,36 @@ var lowestWinRate =
         sb,
         "📈",
         "VINSTMASKINEN",
-        $"{bestWinRate.Name} — {bestWinRate.WinRate:0}% vinst");
+        $"{bestWinRate.Name} — " +
+        $"{bestWinRate.WinRate:0}% vinst");
 
     AppendAward(
         sb,
         "🎯",
         "AIM-KUNGEN",
-        $"{aimKing.Name} — {aimKing.HeadshotPercentage:0}% HS");
+        $"{aimKing.Name} — " +
+        $"{aimKing.HeadshotPercentage:0}% HS");
 
     AppendAward(
         sb,
         "💣",
         "FRAGMASKINEN",
-        $"{fragMachine.Name} — {fragMachine.AverageKills:0.0} kills/match");
+        $"{fragMachine.Name} — " +
+        $"{fragMachine.AverageKills:0.0} kills/match");
 
     AppendAward(
         sb,
         "💥",
         "SKADEMASKINEN",
-        $"{damageDealer.Name} — {damageDealer.Adr:0.0} ADR");
+        $"{damageDealer.Name} — " +
+        $"{damageDealer.Adr:0.0} ADR");
 
     AppendAward(
         sb,
         "⭐",
         "MVP-BONDEN",
-        $"{mvpFarmer.Name} — {mvpFarmer.TotalMvps} MVP");
-
-    AppendAward(
-    sb,
-    "🙈",
-    "SIKTET SAKNAS eller AWPER?",
-    $"{lowestHs.Name} — {lowestHs.HeadshotPercentage:0}% HS");
-
-    AppendAward(
-        sb,
-        "⭐",
-        "MVP-TORKA",
-        $"{lowestMvps.Name} — {lowestMvps.TotalMvps} MVP");
-
-    AppendAward(
-        sb,
-        "🚨",
-        "FORMKRIS",
-        $"{lowestWinRate.Name} — {lowestWinRate.WinRate:0}% vinst");
+        $"{mvpFarmer.Name} — " +
+        $"{mvpFarmer.TotalMvps} MVP");
 
     if (stonks is not null &&
         stonks.EloDelta7Days > 0)
@@ -662,7 +726,8 @@ var lowestWinRate =
             sb,
             "🚀",
             "STONKS",
-            $"{stonks.Name} — +{stonks.EloDelta7Days} ELO");
+            $"{stonks.Name} — " +
+            $"+{stonks.EloDelta7Days} ELO");
     }
 
     if (eloDonator is not null &&
@@ -672,7 +737,8 @@ var lowestWinRate =
             sb,
             "📉",
             "ELO-DONATORN",
-            $"{eloDonator.Name} — {eloDonator.EloDelta7Days} ELO");
+            $"{eloDonator.Name} — " +
+            $"{eloDonator.EloDelta7Days} ELO");
     }
 
     if (hottest is not null)
@@ -681,28 +747,48 @@ var lowestWinRate =
             sb,
             "🔥",
             "GLÖDHET",
-            $"{hottest.Name} — {hottest.Streak} raka vinster");
+            $"{hottest.Name} — " +
+            $"{hottest.Streak} raka vinster");
     }
 
-    // AppendAward(
-    //     sb,
-    //     "💀",
-    //     "VANDRANDE DONATIONEN",
-    //     $"{walkingDonation.Name} — {walkingDonation.Kd:0.00} K/D");
+    AppendAward(
+        sb,
+        "💀",
+        "VANDRANDE DONATIONEN",
+        $"{walkingDonation.Name} — " +
+        $"{walkingDonation.Kd:0.00} K/D");
+
+    AppendAward(
+        sb,
+        "🙈",
+        "SIKTESFÖRBUD",
+        $"{lowestHs.Name} — " +
+        $"{lowestHs.HeadshotPercentage:0}% HS");
+
+    AppendAward(
+        sb,
+        "😴",
+        "MVP-ALLERGI",
+        $"{lowestMvps.Name} — " +
+        $"{lowestMvps.TotalMvps} MVP");
+
+    AppendAward(
+        sb,
+        "🚨",
+        "FORMKRIS",
+        $"{lowestWinRate.Name} — " +
+        $"{lowestWinRate.WinRate:0}% vinst");
 
     AppendAward(
         sb,
         "🚓",
         "UNDER UTREDNING",
-        $"{lowestElo.Name} — {lowestElo.Elo} ELO");
-
-
-    // --------------------------------------------------
-    // FOOTER
-    // --------------------------------------------------
+        $"{lowestElo.Name} — " +
+        $"{lowestElo.Elo} ELO");
 
     sb.AppendLine(
-        "*Statistik baserad på de senaste 10 FACEIT-matcherna*");
+        "*Statistik baserad på de senaste " +
+        "10 FACEIT-matcherna*");
 
     sb.AppendLine();
 
@@ -712,6 +798,148 @@ var lowestWinRate =
 
     return sb.ToString();
 }
+
+
+// --------------------------------------------------
+// KARTSTATISTIK
+// --------------------------------------------------
+
+static string BuildMapStatistics(
+    IReadOnlyList<MapStatistics> maps,
+    int matchesPerPlayer)
+{
+    var sb =
+        new StringBuilder();
+
+    if (maps.Count == 0)
+    {
+        sb.AppendLine(
+            "Ingen kartstatistik kunde hämtas.");
+
+        return sb.ToString();
+    }
+
+    foreach (var map in maps)
+    {
+        sb.AppendLine(
+            $"### 🗺️ {map.Map}");
+
+        sb.AppendLine(
+            $"> 🎮 **{map.UniqueMatches} unika matcher** • " +
+            $"👥 {map.PlayerAppearances} spelarresultat");
+
+        sb.AppendLine(
+            $"> 🏆 **{map.WinRate:0}% vinst** • " +
+            $"⚔️ {map.Kd:0.00} K/D • " +
+            $"🔫 {map.Kr:0.00} K/R");
+
+        sb.AppendLine(
+            $"> 💥 {map.Adr:0.0} ADR • " +
+            $"🎯 {map.HeadshotPercentage:0}% HS • " +
+            $"💣 {map.AverageKills:0.0} kills/match");
+
+        sb.AppendLine();
+    }
+
+
+    // Vi kräver lite data innan en karta
+    // får vinna/bli förnedrad.
+    const int minimumAppearancesForAward =
+        10;
+
+    var eligibleMaps =
+        maps
+            .Where(
+                x =>
+                    x.PlayerAppearances >=
+                    minimumAppearancesForAward)
+            .ToList();
+
+    // Om projektet är helt nytt och ingen karta
+    // har 10 resultat ännu använder vi all data.
+    if (eligibleMaps.Count == 0)
+    {
+        eligibleMaps =
+            maps.ToList();
+    }
+
+    var homeMap =
+        eligibleMaps.MaxBy(
+            x => x.WinRate)!;
+
+    var banThis =
+        eligibleMaps.MinBy(
+            x => x.WinRate)!;
+
+    var bloodbath =
+        eligibleMaps.MaxBy(
+            x => x.Adr)!;
+
+    var hsParadise =
+        eligibleMaps.MaxBy(
+            x => x.HeadshotPercentage)!;
+
+
+    sb.AppendLine(
+        "━━━━━━━━━━━━━━━━━━");
+
+    sb.AppendLine(
+        "### 🏅 KARTDOMEN");
+
+    sb.AppendLine();
+
+    AppendAward(
+        sb,
+        "🏰",
+        "HEMMAPLAN",
+        $"{homeMap.Map} — " +
+        $"{homeMap.WinRate:0}% vinst");
+
+    AppendAward(
+        sb,
+        "☠️",
+        "BANNLYS SKITEN",
+        $"{banThis.Map} — " +
+        $"{banThis.WinRate:0}% vinst");
+
+    AppendAward(
+        sb,
+        "💥",
+        "BLODBADET",
+        $"{bloodbath.Map} — " +
+        $"{bloodbath.Adr:0.0} ADR");
+
+    AppendAward(
+        sb,
+        "🎯",
+        "HS-PARADISET",
+        $"{hsParadise.Map} — " +
+        $"{hsParadise.HeadshotPercentage:0}% HS");
+
+    sb.AppendLine(
+        $"*Kartstatistiken använder upp till " +
+        $"{matchesPerPlayer} senaste matcher per spelare.*");
+
+    sb.AppendLine();
+
+    sb.AppendLine(
+        "*Om flera av gruppens spelare är med i samma match " +
+        "räknas matchen en gång under \"unika matcher\", " +
+        "men varje spelares prestation räknas i gruppstatistiken.*");
+
+    sb.AppendLine();
+
+    sb.AppendLine(
+        $"🕐 Uppdaterad " +
+        $"<t:{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}:R>");
+
+    return sb.ToString();
+}
+
+
+// --------------------------------------------------
+// GEMENSAM FORMATERING
+// --------------------------------------------------
 
 static void AppendAward(
     StringBuilder sb,
@@ -732,15 +960,25 @@ static string FormatEloDelta(
     int? delta)
 {
     if (delta is null)
-        return "• 🆕 spårning startad";
+    {
+        return
+            "• 🆕 spårning startad";
+    }
 
     if (delta > 0)
-        return $"• 📈 **+{delta}** på 7 dagar";
+    {
+        return
+            $"• 📈 **+{delta}** på 7 dagar";
+    }
 
     if (delta < 0)
-        return $"• 📉 **{delta}** på 7 dagar";
+    {
+        return
+            $"• 📉 **{delta}** på 7 dagar";
+    }
 
-    return "• ➖ **0** på 7 dagar";
+    return
+        "• ➖ **0** på 7 dagar";
 }
 
 static string FormatStreak(
@@ -759,6 +997,30 @@ static string FormatStreak(
     }
 
     return "";
+}
+
+static int ToInt(
+    string? value)
+{
+    return int.TryParse(
+        value,
+        NumberStyles.Any,
+        CultureInfo.InvariantCulture,
+        out var result)
+            ? result
+            : 0;
+}
+
+static double ToDouble(
+    string? value)
+{
+    return double.TryParse(
+        value,
+        NumberStyles.Any,
+        CultureInfo.InvariantCulture,
+        out var result)
+            ? result
+            : 0;
 }
 
 

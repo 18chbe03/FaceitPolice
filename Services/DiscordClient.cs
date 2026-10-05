@@ -18,17 +18,46 @@ public sealed class DiscordClient
         _webhookUrl = webhookUrl.TrimEnd('/');
     }
 
-    // --------------------------------------------------
-    // HUVUDTAVLA
-    // --------------------------------------------------
-
-    public async Task<string?> PublishBoardAsync(
+    public Task<string?> PublishBoardAsync(
         string content,
         string? messageId,
         CancellationToken cancellationToken = default)
     {
+        return PublishTextMessageAsync(
+            title: "🐷 CS2 POWER RANKING",
+            continuationTitle:
+                "🐷 CS2 POWER RANKING — FORTSÄTTNING",
+            content: content,
+            messageId: messageId,
+            cancellationToken: cancellationToken);
+    }
+
+    public Task<string?> PublishMapStatsAsync(
+        string content,
+        string? messageId,
+        CancellationToken cancellationToken = default)
+    {
+        return PublishTextMessageAsync(
+            title: "🗺️ GRUPPENS KARTSTATISTIK",
+            continuationTitle:
+                "🗺️ KARTSTATISTIK — FORTSÄTTNING",
+            content: content,
+            messageId: messageId,
+            cancellationToken: cancellationToken);
+    }
+
+    private async Task<string?> PublishTextMessageAsync(
+        string title,
+        string continuationTitle,
+        string content,
+        string? messageId,
+        CancellationToken cancellationToken)
+    {
         var embeds =
-            BuildBoardEmbeds(content);
+            BuildEmbeds(
+                title,
+                continuationTitle,
+                content);
 
         var payload = new
         {
@@ -37,7 +66,6 @@ public sealed class DiscordClient
             embeds
         };
 
-        // Skapa tavlan första gången
         if (string.IsNullOrWhiteSpace(messageId))
         {
             var url =
@@ -69,41 +97,38 @@ public sealed class DiscordClient
                     .GetString();
 
             Console.WriteLine(
-                "✅ Ny FACEIT-tavla skapades.");
+                $"✅ \"{title}\" skapades.");
 
             return createdMessageId;
         }
 
-        // Uppdatera befintlig tavla
         var editUrl =
             $"{_webhookUrl}/messages/{messageId}";
 
-        using var responseUpdate =
+        using var editResponse =
             await _httpClient.PatchAsJsonAsync(
                 editUrl,
                 payload,
                 cancellationToken);
 
-        var updateBody =
-            await responseUpdate.Content.ReadAsStringAsync(
+        var editBody =
+            await editResponse.Content.ReadAsStringAsync(
                 cancellationToken);
 
-        if (!responseUpdate.IsSuccessStatusCode)
+        if (!editResponse.IsSuccessStatusCode)
         {
             throw new Exception(
-                $"Discord-fel vid uppdatering av tavlan: " +
-                $"{(int)responseUpdate.StatusCode} {updateBody}");
+                $"Discord-fel vid uppdatering av " +
+                $"\"{title}\": " +
+                $"{(int)editResponse.StatusCode} " +
+                $"{editBody}");
         }
 
         Console.WriteLine(
-            "✅ FACEIT-tavlan uppdaterades.");
+            $"✅ \"{title}\" uppdaterades.");
 
         return messageId;
     }
-
-    // --------------------------------------------------
-    // BILDUTMÄRKELSE
-    // --------------------------------------------------
 
     public async Task<string?> PublishAwardWithImageAsync(
         string title,
@@ -124,23 +149,6 @@ public sealed class DiscordClient
         var fileName =
             Path.GetFileName(fullPath);
 
-        // Ingen Message ID ännu:
-        // skapa meddelandet och ladda upp bilden.
-        if (string.IsNullOrWhiteSpace(messageId))
-        {
-            return await CreateAwardWithImageAsync(
-                title,
-                description,
-                fullPath,
-                fileName,
-                cancellationToken);
-        }
-
-        // Message ID finns:
-        // uppdatera samma meddelande.
-        //
-        // Bilden laddades upp när meddelandet skapades,
-        // så vi behöver inte skicka samma fil varje dag.
         var embed = new
         {
             title,
@@ -151,67 +159,34 @@ public sealed class DiscordClient
             }
         };
 
-        var payload = new
-        {
-            content = "",
-            embeds = new[]
+        // attachments säkerställer att bilden även
+        // fungerar när befintligt meddelande uppdateras.
+        var payload =
+            new Dictionary<string, object>
             {
-                embed
-            }
-        };
+                ["content"] = "",
+                ["embeds"] = new[]
+                {
+                    embed
+                },
+                ["attachments"] = new[]
+                {
+                    new
+                    {
+                        id = 0,
+                        filename = fileName
+                    }
+                }
+            };
 
-        var editUrl =
-            $"{_webhookUrl}/messages/{messageId}";
+        var creating =
+            string.IsNullOrWhiteSpace(messageId);
 
-        using var response =
-            await _httpClient.PatchAsJsonAsync(
-                editUrl,
-                payload,
-                cancellationToken);
-
-        var body =
-            await response.Content.ReadAsStringAsync(
-                cancellationToken);
-
-        if (!response.IsSuccessStatusCode)
+        if (creating)
         {
-            throw new Exception(
-                $"Discord-fel vid uppdatering av {title}: " +
-                $"{(int)response.StatusCode} {body}");
+            payload["username"] =
+                "Faceit Pigs";
         }
-
-        Console.WriteLine(
-            $"✅ {title} uppdaterades.");
-
-        return messageId;
-    }
-
-    private async Task<string?> CreateAwardWithImageAsync(
-        string title,
-        string description,
-        string imagePath,
-        string fileName,
-        CancellationToken cancellationToken)
-    {
-        var embed = new
-        {
-            title,
-            description,
-            image = new
-            {
-                url = $"attachment://{fileName}"
-            }
-        };
-
-        var payload = new
-        {
-            username = "Faceit Pigs",
-            content = "",
-            embeds = new[]
-            {
-                embed
-            }
-        };
 
         var payloadJson =
             JsonSerializer.Serialize(payload);
@@ -227,14 +202,14 @@ public sealed class DiscordClient
             "payload_json");
 
         await using var fileStream =
-            File.OpenRead(imagePath);
+            File.OpenRead(fullPath);
 
         using var fileContent =
             new StreamContent(fileStream);
 
         fileContent.Headers.ContentType =
             new MediaTypeHeaderValue(
-                GetContentType(imagePath));
+                GetContentType(fullPath));
 
         multipart.Add(
             fileContent,
@@ -242,12 +217,23 @@ public sealed class DiscordClient
             fileName);
 
         var url =
-            $"{_webhookUrl}?wait=true";
+            creating
+                ? $"{_webhookUrl}?wait=true"
+                : $"{_webhookUrl}/messages/{messageId}";
+
+        using var request =
+            new HttpRequestMessage(
+                creating
+                    ? HttpMethod.Post
+                    : HttpMethod.Patch,
+                url)
+            {
+                Content = multipart
+            };
 
         using var response =
-            await _httpClient.PostAsync(
-                url,
-                multipart,
+            await _httpClient.SendAsync(
+                request,
                 cancellationToken);
 
         var body =
@@ -257,8 +243,16 @@ public sealed class DiscordClient
         if (!response.IsSuccessStatusCode)
         {
             throw new Exception(
-                $"Discord-fel vid skapande av {title}: " +
+                $"Discord-fel för \"{title}\": " +
                 $"{(int)response.StatusCode} {body}");
+        }
+
+        if (!creating)
+        {
+            Console.WriteLine(
+                $"✅ \"{title}\" uppdaterades.");
+
+            return messageId;
         }
 
         using var json =
@@ -270,16 +264,14 @@ public sealed class DiscordClient
                 .GetString();
 
         Console.WriteLine(
-            $"✅ {title} skapades.");
+            $"✅ \"{title}\" skapades.");
 
         return createdMessageId;
     }
 
-    // --------------------------------------------------
-    // EMBEDS
-    // --------------------------------------------------
-
-    private static object[] BuildBoardEmbeds(
+    private static object[] BuildEmbeds(
+        string title,
+        string continuationTitle,
         string content)
     {
         const int maxDescriptionLength = 3900;
@@ -293,8 +285,8 @@ public sealed class DiscordClient
             .Select((part, index) => new
             {
                 title = index == 0
-                    ? "🐷 Gris Ranking"
-                    : "🐷 Gris Ranking — FORTSÄTTNING",
+                    ? title
+                    : continuationTitle,
 
                 description = part
             })
@@ -326,15 +318,19 @@ public sealed class DiscordClient
             }
 
             parts.Add(
-                remaining[..splitIndex].Trim());
+                remaining[..splitIndex]
+                    .Trim());
 
             remaining =
-                remaining[splitIndex..].Trim();
+                remaining[splitIndex..]
+                    .Trim();
         }
 
-        if (!string.IsNullOrWhiteSpace(remaining))
+        if (!string.IsNullOrWhiteSpace(
+                remaining))
         {
-            parts.Add(remaining);
+            parts.Add(
+                remaining);
         }
 
         return parts;

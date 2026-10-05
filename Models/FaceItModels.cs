@@ -37,6 +37,9 @@ public sealed class FaceitStatsItem
 
 public sealed class FaceitMatchStats
 {
+    [JsonPropertyName("Match Id")]
+    public string MatchId { get; set; } = "";
+
     [JsonPropertyName("Nickname")]
     public string Nickname { get; set; } = "";
 
@@ -61,14 +64,26 @@ public sealed class FaceitMatchStats
     [JsonPropertyName("ADR")]
     public string Adr { get; set; } = "0";
 
+    [JsonPropertyName("Damage")]
+    public string Damage { get; set; } = "0";
+
+    [JsonPropertyName("Rounds")]
+    public string Rounds { get; set; } = "0";
+
     [JsonPropertyName("K/D Ratio")]
     public string KdRatio { get; set; } = "0";
+
+    [JsonPropertyName("K/R Ratio")]
+    public string KrRatio { get; set; } = "0";
 
     [JsonPropertyName("Map")]
     public string Map { get; set; } = "";
 
     [JsonPropertyName("MVPs")]
     public string Mvps { get; set; } = "0";
+
+    [JsonPropertyName("Double Kills")]
+    public string DoubleKills { get; set; } = "0";
 
     [JsonPropertyName("Triple Kills")]
     public string TripleKills { get; set; } = "0";
@@ -82,7 +97,6 @@ public sealed class FaceitMatchStats
     [JsonPropertyName("Match Finished At")]
     public long MatchFinishedAt { get; set; }
 }
-
 
 public sealed class FaceitPlayerSearchResponse
 {
