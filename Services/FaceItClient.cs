@@ -48,12 +48,12 @@ public sealed class FaceitClient
                     cancellationToken);
 
             throw new Exception(
-                $"FACEIT error for {nickname}: " +
+                $"FACEIT-fel för {nickname}: " +
                 $"{(int)response.StatusCode} {body}");
         }
 
         Console.WriteLine(
-            $"Exact lookup failed for {nickname}, searching...");
+            $"Exakt sökning misslyckades för {nickname}, söker efter spelaren...");
 
         return await SearchPlayerAsync(
             nickname,
@@ -61,88 +61,87 @@ public sealed class FaceitClient
     }
 
     private async Task<FaceitPlayer?> SearchPlayerAsync(
-    string nickname,
-    CancellationToken cancellationToken)
-{
-    var url =
-        "https://open.faceit.com/data/v4/search/players" +
-        $"?nickname={Uri.EscapeDataString(nickname)}" +
-        "&game=cs2" +
-        "&limit=10";
-
-    using var request =
-        CreateRequest(url);
-
-    using var response =
-        await _httpClient.SendAsync(
-            request,
-            cancellationToken);
-
-    if (!response.IsSuccessStatusCode)
+        string nickname,
+        CancellationToken cancellationToken)
     {
-        var body =
-            await response.Content.ReadAsStringAsync(
+        var url =
+            "https://open.faceit.com/data/v4/search/players" +
+            $"?nickname={Uri.EscapeDataString(nickname)}" +
+            "&game=cs2" +
+            "&limit=10";
+
+        using var request =
+            CreateRequest(url);
+
+        using var response =
+            await _httpClient.SendAsync(
+                request,
                 cancellationToken);
 
-        throw new Exception(
-            $"FACEIT search error for {nickname}: " +
-            $"{(int)response.StatusCode} {body}");
-    }
+        if (!response.IsSuccessStatusCode)
+        {
+            var body =
+                await response.Content.ReadAsStringAsync(
+                    cancellationToken);
 
-    var result =
-        await response.Content
-            .ReadFromJsonAsync<FaceitPlayerSearchResponse>(
-                cancellationToken: cancellationToken);
+            throw new Exception(
+                $"FACEIT-sökningen misslyckades för {nickname}: " +
+                $"{(int)response.StatusCode} {body}");
+        }
 
-    var match =
-        result?.Items
-            .FirstOrDefault(x =>
-                string.Equals(
-                    x.Nickname,
-                    nickname,
-                    StringComparison.OrdinalIgnoreCase));
+        var result =
+            await response.Content
+                .ReadFromJsonAsync<FaceitPlayerSearchResponse>(
+                    cancellationToken: cancellationToken);
 
-    match ??=
-        result?.Items.FirstOrDefault();
+        var match =
+            result?.Items
+                .FirstOrDefault(x =>
+                    string.Equals(
+                        x.Nickname,
+                        nickname,
+                        StringComparison.OrdinalIgnoreCase));
 
-    if (match is null)
-    {
+        match ??=
+            result?.Items.FirstOrDefault();
+
+        if (match is null)
+        {
+            Console.WriteLine(
+                $"Ingen FACEIT-spelare hittades för {nickname}");
+
+            return null;
+        }
+
         Console.WriteLine(
-            $"No FACEIT player found for {nickname}");
+            $"Använder FACEIT-spelaren {match.Nickname} för {nickname}");
 
-        return null;
+        return await GetPlayerByIdAsync(
+            match.PlayerId,
+            cancellationToken);
     }
 
-    Console.WriteLine(
-        $"Using FACEIT match {match.Nickname} for {nickname}");
+    private async Task<FaceitPlayer?> GetPlayerByIdAsync(
+        string playerId,
+        CancellationToken cancellationToken)
+    {
+        var url =
+            $"https://open.faceit.com/data/v4/players/{playerId}";
 
-    return await GetPlayerByIdAsync(
-        match.PlayerId,
-        cancellationToken);
-}
+        using var request =
+            CreateRequest(url);
 
+        using var response =
+            await _httpClient.SendAsync(
+                request,
+                cancellationToken);
 
-private async Task<FaceitPlayer?> GetPlayerByIdAsync(
-    string playerId,
-    CancellationToken cancellationToken)
-{
-    var url =
-        $"https://open.faceit.com/data/v4/players/{playerId}";
+        response.EnsureSuccessStatusCode();
 
-    using var request =
-        CreateRequest(url);
-
-    using var response =
-        await _httpClient.SendAsync(
-            request,
-            cancellationToken);
-
-    response.EnsureSuccessStatusCode();
-
-    return await response.Content
-        .ReadFromJsonAsync<FaceitPlayer>(
-            cancellationToken: cancellationToken);
-}
+        return await response.Content
+            .ReadFromJsonAsync<FaceitPlayer>(
+                cancellationToken: cancellationToken);
+    }
 
     public async Task<FaceitStatsResponse> GetRecentStatsAsync(
         string playerId,
@@ -167,7 +166,7 @@ private async Task<FaceitPlayer?> GetPlayerByIdAsync(
                     cancellationToken);
 
             throw new Exception(
-                $"FACEIT stats error for {playerId}: " +
+                $"Kunde inte hämta FACEIT-statistik för {playerId}: " +
                 $"{(int)response.StatusCode} {body}");
         }
 

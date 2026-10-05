@@ -293,8 +293,8 @@ public sealed class DiscordClient
             .Select((part, index) => new
             {
                 title = index == 0
-                    ? "🐷 CS2 POWER RANKING"
-                    : "🐷 CS2 POWER RANKING — FORTSÄTTNING",
+                    ? "🐷 Gris Ranking"
+                    : "🐷 Gris Ranking — FORTSÄTTNING",
 
                 description = part
             })

@@ -231,11 +231,11 @@ string? returnedTiltWatchMessageId = null;
 if (tiltWatchPlayer is not null)
 {
     var tiltDescription =
-        $"**{tiltWatchPlayer.Name} är under bevakning.**\n" +
+        $"**{tiltWatchPlayer.Name} är under bevakning!**\n" +
         $"📉 Flest förluster just nu: " +
         $"**{tiltWatchPlayer.Losses} av " +
         $"{tiltWatchPlayer.Matches} matcher**.\n\n" +
-        $"👮 Fena utför dagens Tilt Watch.";
+        $"⚠️ Ytterligare matcher kan leda till tilt.";
 
     returnedTiltWatchMessageId =
         await discordClient.PublishAwardWithImageAsync(
