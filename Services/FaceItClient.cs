@@ -1,5 +1,6 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text.Json;
 using FaceitPolice.Models;
 
 namespace FaceitPolice.Services;
@@ -152,7 +153,8 @@ public sealed class FaceitClient
             $"https://open.faceit.com/data/v4/players/" +
             $"{playerId}/games/cs2/stats?limit={limit}";
 
-        using var request = CreateRequest(url);
+        using var request =
+            CreateRequest(url);
 
         using var response =
             await _httpClient.SendAsync(
@@ -174,6 +176,92 @@ public sealed class FaceitClient
             .ReadFromJsonAsync<FaceitStatsResponse>(
                 cancellationToken: cancellationToken)
             ?? new FaceitStatsResponse();
+    }
+
+    public async Task<int> GetMatchCountAsync(
+        string playerId,
+        int days = 30,
+        CancellationToken cancellationToken = default)
+    {
+        var now =
+            DateTimeOffset.UtcNow;
+
+        var from =
+            now
+                .AddDays(-days)
+                .ToUnixTimeSeconds();
+
+        var to =
+            now.ToUnixTimeSeconds();
+
+        const int pageSize = 100;
+
+        var offset = 0;
+        var totalMatches = 0;
+
+        while (true)
+        {
+            var url =
+                $"https://open.faceit.com/data/v4/players/{playerId}/history" +
+                "?game=cs2" +
+                $"&from={from}" +
+                $"&to={to}" +
+                $"&offset={offset}" +
+                $"&limit={pageSize}";
+
+            using var request =
+                CreateRequest(url);
+
+            using var response =
+                await _httpClient.SendAsync(
+                    request,
+                    cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var body =
+                    await response.Content.ReadAsStringAsync(
+                        cancellationToken);
+
+                throw new Exception(
+                    $"Kunde inte hämta FACEIT-matchhistorik för {playerId}: " +
+                    $"{(int)response.StatusCode} {body}");
+            }
+
+            var json =
+                await response.Content.ReadAsStringAsync(
+                    cancellationToken);
+
+            using var document =
+                JsonDocument.Parse(json);
+
+            if (!document.RootElement.TryGetProperty(
+                    "items",
+                    out var items) ||
+                items.ValueKind != JsonValueKind.Array)
+            {
+                break;
+            }
+
+            var count =
+                items.GetArrayLength();
+
+            totalMatches += count;
+
+            if (count < pageSize)
+            {
+                break;
+            }
+
+            offset += pageSize;
+
+            if (offset > 1000)
+            {
+                break;
+            }
+        }
+
+        return totalMatches;
     }
 
     private HttpRequestMessage CreateRequest(string url)
