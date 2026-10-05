@@ -309,10 +309,9 @@ string? returnedTiltWatchMessageId =
 if (tiltWatchPlayer is not null)
 {
     var tiltDescription =
-        $"**{tiltWatchPlayer.Name} befinner sig i kritiskt tilt-tillstånd.**\n" +
+        $"**Tiltvarning: {tiltWatchPlayer.Name}**\n" +
         $"📉 **{tiltWatchPlayer.Losses} förluster på " +
         $"{tiltWatchPlayer.Matches} matcher** — " +
-        $"tilten är inte längre tillfällig, den är strukturell.\n\n" +
         $"⚠️ Ytterligare matcher kan leda till akut övertilt.";
 
     returnedTiltWatchMessageId =
@@ -884,7 +883,7 @@ static string BuildMapStatistics(
         "━━━━━━━━━━━━━━━━━━");
 
     sb.AppendLine(
-        "### 🏅 KARTDOMEN");
+        "### 🏅 Kart-Statistik");
 
     sb.AppendLine();
 
@@ -925,7 +924,7 @@ static string BuildMapStatistics(
     sb.AppendLine(
         "*Om flera av gruppens spelare är med i samma match " +
         "räknas matchen en gång under \"unika matcher\", " +
-        "men varje spelares prestation räknas i gruppstatistiken.*");
+        "men varje spelares prestation räknas i gruppstatistiken. (maps med mindre än 10 spelade ignoreras).*");
 
     sb.AppendLine();
 
