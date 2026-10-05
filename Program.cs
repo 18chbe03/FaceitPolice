@@ -168,31 +168,20 @@ var discordState =
 
 
 
-// State-filen vinner över env.
-
-// Env används som fallback första gången.
+// Env vinner över state.
+// State används endast som fallback.
 
 var boardMessageId =
-
-    discordState.BoardMessageId
-
-    ?? configuredBoardMessageId;
-
-
+    configuredBoardMessageId
+    ?? discordState.BoardMessageId;
 
 var mapStatsMessageId =
-
-    discordState.MapStatsMessageId
-
-    ?? configuredMapStatsMessageId;
-
-
+    configuredMapStatsMessageId
+    ?? discordState.MapStatsMessageId;
 
 var tiltWatchMessageId =
-
-    discordState.TiltWatchMessageId
-
-    ?? configuredTiltWatchMessageId;
+    configuredTiltWatchMessageId
+    ?? discordState.TiltWatchMessageId;
 
 
 
