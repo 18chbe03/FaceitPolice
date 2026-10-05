@@ -2,8 +2,8 @@ name: Daily Faceit Police
 
 on:
   schedule:
-    # 17:00 UTC varje dag
-    - cron: "0 17 * * *"
+    - cron: "0 16-23,0-2 * * *"
+      timezone: "Europe/Stockholm"
 
   workflow_dispatch:
 
