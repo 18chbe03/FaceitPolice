@@ -1598,19 +1598,6 @@ static string BuildLeaderboard(
 
 
 
-    AppendAward(
-
-        sb,
-
-        "💀",
-
-        "DONATIONEN",
-
-        $"{walkingDonation.Name} — " +
-
-        $"{walkingDonation.Kd:0.00} K/D");
-
-
 
     AppendAward(
 
