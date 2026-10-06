@@ -1721,13 +1721,16 @@ static string BuildRanking(
     }
 
     sb.AppendLine(
-        "*📊 V-F (gruppmatcher) • ⚔️ K/D • 💥 ADR • 🎯 HS*");
+    "*📊 V-F (gruppmatcher) • ⚔️ K/D • 💥 ADR • 🎯 HS*");
 
     sb.AppendLine(
         "*🚪 entry kills/m • ⚡ entrydueller/m • ✅ entry-vinst% • 🧠 clutch 1v1/1v2*");
 
     sb.AppendLine(
-        $"*🎭 Spelstil: 🦍 först in • 🔥 aggressiv • ⚖️ balanserad • 🐢 försiktig • 🐔 bakåt • minst {minimumGroupMatches}/{rankingWindow} gruppmatcher*");
+        $"*🎭 Spelstil: 🦍 först in • 🔥 aggressiv • ⚖️ balanserad • 🐢 försiktig • 🐔 bakåt*");
+
+    sb.AppendLine(
+        $"*🐷 Grisindex: 75% hur ofta du går först + 25% hur många entrydueller du tar. Låg = mer gas. Minst {minimumGroupMatches}/{rankingWindow} gruppmatcher.*");
 
     if (excludedPlayers.Count > 0)
     {
@@ -1735,7 +1738,7 @@ static string BuildRanking(
             $"🚫 **Ej med:** {FormatExcludedPlayers(excludedPlayers, rankingWindow)} " +
             $"— minst {minimumGroupMatches} gruppmatcher krävs.");
     }
-
+    
     return sb.ToString();
 }
 
