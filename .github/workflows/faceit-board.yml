@@ -1,28 +1,69 @@
 name: Uppdatera FACEIT-tavlan
 
 on:
+  # Kör på UTC-timmarna som täcker svensk 16:00-02:59 under både
+  # sommar- och vintertid. Första steget kontrollerar sedan exakt svensk tid.
+  schedule:
+    - cron: "7 14-23,0-1 * * *"
+
   workflow_dispatch:
 
 permissions:
   contents: write
+
+# Förhindra att en manuell och en schemalagd körning skriver samtidigt.
+concurrency:
+  group: faceit-police-main
+  cancel-in-progress: false
 
 jobs:
   update:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Kontrollera svensk körtid
+        id: run-window
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "Manuell körning - fortsätter direkt."
+            exit 0
+          fi
+
+          stockholm_hour="$(TZ=Europe/Stockholm date +%H)"
+          stockholm_time="$(TZ=Europe/Stockholm date '+%Y-%m-%d %H:%M:%S %Z')"
+
+          echo "Svensk tid: $stockholm_time"
+
+          if (( 10#$stockholm_hour >= 16 || 10#$stockholm_hour <= 2 )); then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "Inom körfönstret 16:00-02:59 - fortsätter."
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "Utanför körfönstret - avslutar utan att uppdatera Discord."
+          fi
+
       - name: Hämta repository
+        if: steps.run-window.outputs.run == 'true'
         uses: actions/checkout@v4
 
       - name: Installera .NET 8
+        if: steps.run-window.outputs.run == 'true'
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "8.0.x"
 
       - name: Restore
+        if: steps.run-window.outputs.run == 'true'
         run: dotnet restore
 
+      - name: Build
+        if: steps.run-window.outputs.run == 'true'
+        run: dotnet build --configuration Release --no-restore
+
       - name: Kör FACEIT-tavlan
+        if: steps.run-window.outputs.run == 'true'
         run: dotnet run --configuration Release
         env:
           FACEIT_API_KEY: ${{ secrets.FACEIT_API_KEY }}
@@ -33,6 +74,8 @@ jobs:
           FACEIT_PLAYERS: ${{ vars.FACEIT_PLAYERS }}
 
       - name: Spara ELO-historik
+        if: steps.run-window.outputs.run == 'true'
+        shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -41,5 +84,6 @@ jobs:
 
           if ! git diff --cached --quiet; then
             git commit -m "Uppdatera FACEIT ELO-historik"
-            git push
+            git pull --rebase origin main
+            git push origin main
           fi

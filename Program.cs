@@ -24,7 +24,7 @@ const int ActivityDays = 30;
 
 const int MinimumGroupPlayersPerMatch = 3;
 
-
+const int MinimumGroupMatchesForRanking = 3;
 
 
 
@@ -385,7 +385,7 @@ Console.WriteLine(
 
 
 
-var players =
+var allPlayers =
 
     new List<PlayerLeaderboardEntry>();
 
@@ -461,7 +461,7 @@ foreach (var fetchedPlayer in fetchedPlayers)
 
 
 
-    players.Add(
+    allPlayers.Add(
 
         new PlayerLeaderboardEntry
 
@@ -589,7 +589,7 @@ foreach (var fetchedPlayer in fetchedPlayers)
 
 
 
-foreach (var player in players)
+foreach (var player in allPlayers)
 
 {
 
@@ -629,9 +629,39 @@ await historyService.SaveAsync();
 
 
 
+var rankingPlayers =
+
+    allPlayers
+
+        .Where(
+
+            x => x.Matches >= MinimumGroupMatchesForRanking)
+
+        .ToList();
+
+
+
+foreach (var excludedPlayer in
+         allPlayers.Where(
+             x => x.Matches < MinimumGroupMatchesForRanking))
+
+{
+
+    Console.WriteLine(
+
+        $"🚫 {excludedPlayer.Name}: filtreras bort från Power Ranking och utmärkelser " +
+
+        $"({excludedPlayer.Matches}/{PlayerStatsMatchLimit} gruppmatcher, " +
+
+        $"minst {MinimumGroupMatchesForRanking} krävs)." );
+
+}
+
+
+
 var orderedPlayers =
 
-    players
+    rankingPlayers
 
         .OrderByDescending(
 
@@ -719,7 +749,11 @@ var leaderboardMessage =
 
         orderedPlayers,
 
-        ActivityDays);
+        ActivityDays,
+
+        MinimumGroupMatchesForRanking,
+
+        PlayerStatsMatchLimit);
 
 
 
@@ -1249,13 +1283,45 @@ static string BuildLeaderboard(
 
     IReadOnlyList<PlayerLeaderboardEntry> players,
 
-    int activityDays)
+    int activityDays,
+
+    int minimumGroupMatches,
+
+    int rankingWindow)
 
 {
 
     var sb =
 
         new StringBuilder();
+
+
+
+    if (players.Count == 0)
+
+    {
+
+        sb.AppendLine(
+
+            $"Ingen spelare har minst {minimumGroupMatches} gruppmatcher " +
+
+            $"bland sina senaste {rankingWindow} FACEIT-matcher.");
+
+
+
+        sb.AppendLine();
+
+
+
+        sb.AppendLine(
+
+            $"🕐 Uppdaterad <t:{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}:R>");
+
+
+
+        return sb.ToString();
+
+    }
 
 
 
@@ -1345,7 +1411,7 @@ static string BuildLeaderboard(
 
     sb.AppendLine(
 
-        "### 🏅 POLISRAPPORT");
+        "### 🏅 GRUPPENS UTMÄRKELSER");
 
 
 
@@ -1814,9 +1880,11 @@ static string BuildLeaderboard(
 
     sb.AppendLine(
 
-        "*Prestationsstatistik baserad på gruppmatcher bland de senaste " +
+        $"*Prestationsstatistik baserad på gruppmatcher bland de senaste " +
 
-        "10 FACEIT-matcherna.*");
+        $"{rankingWindow} FACEIT-matcherna. Minst {minimumGroupMatches} " +
+
+        "gruppmatcher krävs för att visas och kunna få en utmärkelse.*");
 
 
 
