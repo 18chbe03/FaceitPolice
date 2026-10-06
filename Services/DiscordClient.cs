@@ -29,13 +29,19 @@ public sealed class DiscordClient
         string? messageId,
         CancellationToken cancellationToken = default)
     {
+        var sections =
+            SplitPowerRankingContent(
+                content);
+
         return PublishTextMessageAsync(
             title:
                 "🐷 CS2 POWER RANKING",
             continuationTitle:
                 "🐷 CS2 POWER RANKING — FORTSÄTTNING",
             content:
-                content,
+                sections.EmbedContent,
+            messageContent:
+                sections.MessageContent,
             messageId:
                 messageId,
             cancellationToken:
@@ -58,6 +64,8 @@ public sealed class DiscordClient
                 "🗺️ MAP ANALYTICS — FORTSÄTTNING",
             content:
                 content,
+            messageContent:
+                "",
             messageId:
                 messageId,
             cancellationToken:
@@ -72,6 +80,7 @@ public sealed class DiscordClient
         string title,
         string continuationTitle,
         string content,
+        string messageContent,
         string? messageId,
         CancellationToken cancellationToken)
     {
@@ -87,12 +96,13 @@ public sealed class DiscordClient
             return await CreateTextMessageAsync(
                 title,
                 embeds,
+                messageContent,
                 cancellationToken);
         }
 
         var payload = new
         {
-            content = "",
+            content = messageContent,
             embeds
         };
 
@@ -121,6 +131,7 @@ public sealed class DiscordClient
             return await CreateTextMessageAsync(
                 title,
                 embeds,
+                messageContent,
                 cancellationToken);
         }
 
@@ -141,12 +152,13 @@ public sealed class DiscordClient
     private async Task<string?> CreateTextMessageAsync(
         string title,
         object[] embeds,
+        string messageContent,
         CancellationToken cancellationToken)
     {
         var payload = new
         {
             username = "Faceit Pigs",
-            content = "",
+            content = messageContent,
             embeds
         };
 
@@ -441,6 +453,83 @@ public sealed class DiscordClient
             fileName);
 
         return multipart;
+    }
+
+    // --------------------------------------------------
+    // POWER RANKING - DELA UPP DISCORD-INNEHÅLLET
+    // --------------------------------------------------
+
+    private static (
+        string EmbedContent,
+        string MessageContent) SplitPowerRankingContent(
+        string content)
+    {
+        const string awardsHeader =
+            "━━━━━━━━━━━━━━━━━━\n### 🏅 GRUPPENS UTMÄRKELSER";
+
+        const string footerStart =
+            "*Prestationsstatistik baserad";
+
+        var normalized =
+            content.Replace(
+                "\r\n",
+                "\n",
+                StringComparison.Ordinal);
+
+        var awardsIndex =
+            normalized.IndexOf(
+                awardsHeader,
+                StringComparison.Ordinal);
+
+        if (awardsIndex < 0)
+        {
+            return (normalized, "");
+        }
+
+        var footerIndex =
+            normalized.IndexOf(
+                footerStart,
+                awardsIndex,
+                StringComparison.Ordinal);
+
+        if (footerIndex < 0)
+        {
+            footerIndex =
+                normalized.Length;
+        }
+
+        var ranking =
+            normalized[..awardsIndex]
+                .Trim();
+
+        var awards =
+            normalized[awardsIndex..footerIndex]
+                .Trim();
+
+        var footer =
+            footerIndex < normalized.Length
+                ? normalized[footerIndex..]
+                    .Trim()
+                : "";
+
+        var embedContent =
+            string.IsNullOrWhiteSpace(footer)
+                ? ranking
+                : $"{ranking}\n\n{footer}";
+
+        // Discord tillåter max 2 000 tecken i vanligt message content.
+        // Utmärkelserna ligger där för att lämna 6 000-teckensbudgeten
+        // för embeds till själva Power Ranking-delen.
+        if (awards.Length > 2000)
+        {
+            throw new InvalidOperationException(
+                $"GRUPPENS UTMÄRKELSER är {awards.Length} tecken. " +
+                "Discord tillåter max 2000 tecken i message content.");
+        }
+
+        return (
+            embedContent,
+            awards);
     }
 
     // --------------------------------------------------

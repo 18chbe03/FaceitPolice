@@ -3,9 +3,7 @@ name: Uppdatera FACEIT-tavlan
 on:
   schedule:
     # Kör varje timme, dygnet runt, 7 minuter över hel timme.
-    - cron: "30 * * * *"
-      timezone: "Europe/Stockholm"
-
+    - cron: "7 * * * *"
 
   workflow_dispatch:
 
