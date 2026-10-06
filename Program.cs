@@ -176,6 +176,16 @@ var groupMatchFilterService =
 
 
 
+var faceitAdvancedProbeService =
+
+    new FaceitAdvancedProbeService(
+
+        httpClient,
+
+        faceitApiKey);
+
+
+
 var leetifyClient =
 
     new LeetifyClient(
@@ -432,6 +442,64 @@ Console.WriteLine(
     $"👥 Hittade {qualifiedMatchTeams.Count} match/lag-kombinationer " +
 
     $"med minst {MinimumGroupPlayersPerMatch} spelare från gruppen.");
+
+
+
+// --------------------------------------------------
+
+// FACEIT ADVANCED STATS - PROBE
+
+// --------------------------------------------------
+
+
+
+var faceitProbeMatchIds =
+
+    fetchedPlayers
+
+        .SelectMany(fetchedPlayer =>
+
+            groupMatchFilterService
+
+                .Filter(
+
+                    fetchedPlayer.FullStats,
+
+                    qualifiedMatchTeams)
+
+                .Items)
+
+        .Select(x => x.Stats)
+
+        .Where(x =>
+
+            !string.IsNullOrWhiteSpace(x.MatchId))
+
+        .OrderByDescending(x => x.MatchFinishedAt)
+
+        .Select(x => x.MatchId)
+
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+
+        .Take(3)
+
+        .ToList();
+
+
+
+if (faceitProbeMatchIds.Count > 0)
+
+{
+
+    await faceitAdvancedProbeService.ProbeAsync(
+
+        fetchedPlayers[0].Player.PlayerId,
+
+        faceitProbeMatchIds,
+
+        maxMatches: 3);
+
+}
 
 
 
