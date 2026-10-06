@@ -75,5 +75,7 @@ public sealed class DiscordMessageState
 
     public string? MapStatsMessageId { get; set; }
 
+    public string? AdvancedStatsMessageId { get; set; }
+
     public string? TiltWatchMessageId { get; set; }
 }

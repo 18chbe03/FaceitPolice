@@ -1,6 +1,8 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json;
+using System.Text.Json.Serialization;
+using FaceitPolice.Models;
 
 namespace FaceitPolice.Services;
 
@@ -8,6 +10,13 @@ public sealed class LeetifyClient
 {
     private const string BaseUrl =
         "https://api-public.cs-prod.leetify.com";
+
+    private static readonly JsonSerializerOptions JsonOptions =
+        new()
+        {
+            PropertyNameCaseInsensitive = true,
+            NumberHandling = JsonNumberHandling.AllowReadingFromString
+        };
 
     private readonly HttpClient _httpClient;
     private readonly string? _apiKey;
@@ -22,159 +31,117 @@ public sealed class LeetifyClient
             : apiKey.Trim();
     }
 
-    public async Task<bool> TryLogFirstAvailableFaceitMatchAsync(
-        IEnumerable<string> faceitMatchIds,
-        int maxMatches = 10,
+    public bool HasApiKey =>
+        _apiKey is not null;
+
+    public async Task<LeetifyProfileResponse?> GetProfileAsync(
+        string steam64Id,
         CancellationToken cancellationToken = default)
     {
-        if (maxMatches < 1)
+        if (string.IsNullOrWhiteSpace(steam64Id))
         {
-            throw new ArgumentOutOfRangeException(
-                nameof(maxMatches),
-                "Minst en Leetify-match måste testas.");
+            return null;
         }
 
-        var matchIds =
-            faceitMatchIds
-                .Where(x =>
-                    !string.IsNullOrWhiteSpace(x))
-                .Distinct(
-                    StringComparer.OrdinalIgnoreCase)
-                .Take(maxMatches)
-                .ToList();
+        var url =
+            $"{BaseUrl}/v3/profile" +
+            $"?steam64_id={Uri.EscapeDataString(steam64Id)}";
 
-        Console.WriteLine();
-        Console.WriteLine(
-            "==============================================");
-        Console.WriteLine(
-            "🧪 LEETIFY - TEST AV FACEIT-MATCHER");
-        Console.WriteLine(
-            "==============================================");
+        using var request =
+            CreateRequest(url);
 
-        if (matchIds.Count == 0)
+        using var response =
+            await _httpClient.SendAsync(
+                request,
+                cancellationToken);
+
+        var body =
+            await response.Content.ReadAsStringAsync(
+                cancellationToken);
+
+        if (response.StatusCode == HttpStatusCode.NotFound)
         {
-            Console.WriteLine(
-                "⚠️ Inga gruppmatcher fanns att testa mot Leetify.");
-            Console.WriteLine(
-                "==============================================");
-            Console.WriteLine();
-
-            return false;
+            return null;
         }
 
-        Console.WriteLine(
-            _apiKey is null
-                ? "🔓 Kör utan LEETIFY_API_KEY."
-                : "🔐 Kör med LEETIFY_API_KEY.");
+        if (response.StatusCode == HttpStatusCode.TooManyRequests)
+        {
+            throw new LeetifyRateLimitException();
+        }
 
-        Console.WriteLine(
-            $"Testar upp till {matchIds.Count} av de senaste gruppmatcherna.");
-        Console.WriteLine(
-            "Varje match testas både med fullständigt FACEIT-ID och utan prefixet '1-'.");
-        Console.WriteLine();
-
-        var httpAttemptCount = 0;
-
-        foreach (var matchId in matchIds)
+        if (!response.IsSuccessStatusCode)
         {
             Console.WriteLine(
-                $"FACEIT Match ID: {matchId}");
+                $"⚠️ Leetify-profil {steam64Id}: " +
+                $"{(int)response.StatusCode} {response.StatusCode}");
 
-            var candidateIds =
-                GetCandidateMatchIds(matchId);
+            return null;
+        }
 
-            foreach (var candidateId in candidateIds)
+        return JsonSerializer.Deserialize<LeetifyProfileResponse>(
+            body,
+            JsonOptions);
+    }
+
+    public async Task<LeetifyMatchDetailsResponse?> GetFaceitMatchAsync(
+        string faceitMatchId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(faceitMatchId))
+        {
+            return null;
+        }
+
+        foreach (var candidateId in GetCandidateMatchIds(faceitMatchId))
+        {
+            var url =
+                $"{BaseUrl}/v2/matches/faceit/" +
+                Uri.EscapeDataString(candidateId);
+
+            using var request =
+                CreateRequest(url);
+
+            using var response =
+                await _httpClient.SendAsync(
+                    request,
+                    cancellationToken);
+
+            var body =
+                await response.Content.ReadAsStringAsync(
+                    cancellationToken);
+
+            if (response.StatusCode == HttpStatusCode.TooManyRequests)
             {
-                httpAttemptCount++;
+                throw new LeetifyRateLimitException();
+            }
 
-                var url =
-                    $"{BaseUrl}/v2/matches/faceit/" +
-                    Uri.EscapeDataString(candidateId);
+            if (response.StatusCode == HttpStatusCode.NotFound)
+            {
+                continue;
+            }
 
-                using var request =
-                    CreateRequest(url);
-
-                using var response =
-                    await _httpClient.SendAsync(
-                        request,
-                        cancellationToken);
-
-                var responseBody =
-                    await response.Content.ReadAsStringAsync(
-                        cancellationToken);
-
+            if (!response.IsSuccessStatusCode)
+            {
                 Console.WriteLine(
-                    $"  Test-ID: {candidateId}");
+                    $"⚠️ Leetify match {candidateId}: " +
+                    $"{(int)response.StatusCode} {response.StatusCode}. " +
+                    "Fortsätter.");
 
-                Console.WriteLine(
-                    $"  Leetify HTTP: {(int)response.StatusCode} " +
-                    $"{response.StatusCode}");
+                continue;
+            }
 
-                if (response.IsSuccessStatusCode)
-                {
-                    LogMatchFields(
-                        matchId,
-                        candidateId,
-                        responseBody);
+            var match =
+                JsonSerializer.Deserialize<LeetifyMatchDetailsResponse>(
+                    body,
+                    JsonOptions);
 
-                    Console.WriteLine(
-                        "==============================================");
-                    Console.WriteLine();
-
-                    return true;
-                }
-
-                if (response.StatusCode == HttpStatusCode.TooManyRequests)
-                {
-                    Console.WriteLine(
-                        "  ⚠️ Rate limit träffad. Avbryter proben för att inte fortsätta hamra API:t.");
-
-                    if (!string.IsNullOrWhiteSpace(responseBody))
-                    {
-                        Console.WriteLine(
-                            $"  Svar: {Truncate(responseBody, 1000)}");
-                    }
-
-                    Console.WriteLine();
-                    Console.WriteLine(
-                        $"Totalt antal Leetify-anrop: {httpAttemptCount}");
-                    Console.WriteLine(
-                        "==============================================");
-                    Console.WriteLine();
-
-                    return false;
-                }
-
-                if (response.StatusCode == HttpStatusCode.NotFound)
-                {
-                    Console.WriteLine(
-                        "  ↪️ Matchen hittades inte med detta ID-format.");
-                }
-                else
-                {
-                    Console.WriteLine(
-                        "  ⚠️ Anropet misslyckades, fortsätter med nästa ID/match.");
-                }
-
-                if (!string.IsNullOrWhiteSpace(responseBody))
-                {
-                    Console.WriteLine(
-                        $"  Svar: {Truncate(responseBody, 1000)}");
-                }
-
-                Console.WriteLine();
+            if (match is not null)
+            {
+                return match;
             }
         }
 
-        Console.WriteLine(
-            $"⚠️ Ingen av de {matchIds.Count} testade gruppmatcherna kunde hämtas från Leetify.");
-        Console.WriteLine(
-            $"Totalt antal Leetify-anrop: {httpAttemptCount}");
-        Console.WriteLine(
-            "==============================================");
-        Console.WriteLine();
-
-        return false;
+        return null;
     }
 
     private HttpRequestMessage CreateRequest(
@@ -222,162 +189,12 @@ public sealed class LeetifyClient
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
+}
 
-    private static void LogMatchFields(
-        string originalFaceitMatchId,
-        string successfulLookupId,
-        string json)
+public sealed class LeetifyRateLimitException : Exception
+{
+    public LeetifyRateLimitException()
+        : base("Leetify rate limit nådd.")
     {
-        try
-        {
-            using var document =
-                JsonDocument.Parse(json);
-
-            var root =
-                document.RootElement;
-
-            if (root.ValueKind != JsonValueKind.Object)
-            {
-                Console.WriteLine(
-                    "⚠️ Leetify-svaret var inte ett JSON-objekt.");
-                Console.WriteLine(
-                    $"Svar: {Truncate(json, 2000)}");
-                return;
-            }
-
-            Console.WriteLine();
-            Console.WriteLine(
-                "✅ MATCH HITTAD HOS LEETIFY");
-            Console.WriteLine(
-                $"FACEIT Match ID: {originalFaceitMatchId}");
-            Console.WriteLine(
-                $"Leetify lookup-ID: {successfulLookupId}");
-            Console.WriteLine();
-
-            Console.WriteLine(
-                "LEETIFY MATCHFÄLT:");
-
-            foreach (var property in
-                     root.EnumerateObject()
-                         .Where(x =>
-                             !string.Equals(
-                                 x.Name,
-                                 "stats",
-                                 StringComparison.OrdinalIgnoreCase))
-                         .OrderBy(
-                             x => x.Name,
-                             StringComparer.OrdinalIgnoreCase))
-            {
-                Console.WriteLine(
-                    $"{property.Name} = {GetDisplayValue(property.Value)}");
-            }
-
-            Console.WriteLine();
-
-            if (!root.TryGetProperty(
-                    "stats",
-                    out var stats) ||
-                stats.ValueKind != JsonValueKind.Array)
-            {
-                Console.WriteLine(
-                    "⚠️ Leetify-svaret innehöll ingen stats-array.");
-                Console.WriteLine(
-                    $"Hela svaret: {Truncate(json, 4000)}");
-                return;
-            }
-
-            var statFields =
-                new SortedDictionary<string, string>(
-                    StringComparer.OrdinalIgnoreCase);
-
-            var playerCount = 0;
-
-            foreach (var playerStats in stats.EnumerateArray())
-            {
-                if (playerStats.ValueKind != JsonValueKind.Object)
-                {
-                    continue;
-                }
-
-                playerCount++;
-
-                foreach (var property in playerStats.EnumerateObject())
-                {
-                    if (statFields.ContainsKey(property.Name))
-                    {
-                        continue;
-                    }
-
-                    statFields[property.Name] =
-                        GetDisplayValue(property.Value);
-                }
-            }
-
-            Console.WriteLine(
-                $"LEETIFY PLAYER STATS - {playerCount} spelare, " +
-                $"{statFields.Count} olika fält:");
-            Console.WriteLine();
-
-            foreach (var field in statFields)
-            {
-                Console.WriteLine(
-                    $"{field.Key} = {field.Value}");
-            }
-        }
-        catch (JsonException ex)
-        {
-            Console.WriteLine(
-                $"⚠️ Kunde inte tolka Leetify JSON: {ex.Message}");
-            Console.WriteLine(
-                $"Svar: {Truncate(json, 2000)}");
-        }
-    }
-
-    private static string GetDisplayValue(
-        JsonElement value)
-    {
-        var displayValue =
-            value.ValueKind switch
-            {
-                JsonValueKind.String =>
-                    value.GetString() ?? "",
-
-                JsonValueKind.Number =>
-                    value.ToString(),
-
-                JsonValueKind.True =>
-                    "true",
-
-                JsonValueKind.False =>
-                    "false",
-
-                JsonValueKind.Null =>
-                    "null",
-
-                JsonValueKind.Array =>
-                    value.GetArrayLength() == 0
-                        ? "[]"
-                        : Truncate(value.GetRawText(), 300),
-
-                JsonValueKind.Object =>
-                    Truncate(value.GetRawText(), 300),
-
-                _ =>
-                    value.ToString()
-            };
-
-        return displayValue;
-    }
-
-    private static string Truncate(
-        string value,
-        int maxLength)
-    {
-        if (value.Length <= maxLength)
-        {
-            return value;
-        }
-
-        return value[..maxLength] + "...";
     }
 }

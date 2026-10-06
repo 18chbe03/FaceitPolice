@@ -43,7 +43,7 @@ public sealed class DiscordClient
     }
 
     // --------------------------------------------------
-    // KARTSTATISTIK
+    // MAP ANALYTICS
     // --------------------------------------------------
 
     public Task<string?> PublishMapStatsAsync(
@@ -53,9 +53,31 @@ public sealed class DiscordClient
     {
         return PublishTextMessageAsync(
             title:
-                "🗺️ GRUPPENS KARTSTATISTIK",
+                "🗺️ MAP ANALYTICS",
             continuationTitle:
-                "🗺️ KARTSTATISTIK — FORTSÄTTNING",
+                "🗺️ MAP ANALYTICS — FORTSÄTTNING",
+            content:
+                content,
+            messageId:
+                messageId,
+            cancellationToken:
+                cancellationToken);
+    }
+
+    // --------------------------------------------------
+    // PLAYER ANALYTICS
+    // --------------------------------------------------
+
+    public Task<string?> PublishAdvancedStatsAsync(
+        string content,
+        string? messageId,
+        CancellationToken cancellationToken = default)
+    {
+        return PublishTextMessageAsync(
+            title:
+                "🧠 PLAYER ANALYTICS",
+            continuationTitle:
+                "🧠 PLAYER ANALYTICS — FORTSÄTTNING",
             content:
                 content,
             messageId:

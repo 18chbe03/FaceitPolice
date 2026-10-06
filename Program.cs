@@ -22,6 +22,14 @@ const int MapStatsMatchLimit = 50;
 
 const int ActivityDays = 30;
 
+const int AdvancedStatsMatchLimit = 20;
+
+const int AdvancedStatsDays = 30;
+
+const int MinimumAdvancedMatchesForBoard = 2;
+
+const int MinimumAdvancedMatchesForAwards = 5;
+
 const int MinimumGroupPlayersPerMatch = 3;
 
 const int MinimumGroupMatchesForRanking = 2;
@@ -85,6 +93,14 @@ var configuredMapStatsMessageId =
     Environment.GetEnvironmentVariable(
 
         "MAP_STATS_MESSAGE_ID");
+
+
+
+var configuredAdvancedStatsMessageId =
+
+    Environment.GetEnvironmentVariable(
+
+        "ADVANCED_STATS_MESSAGE_ID");
 
 
 
@@ -170,6 +186,14 @@ var leetifyClient =
 
 
 
+var advancedStatsService =
+
+    new AdvancedStatsService(
+
+        leetifyClient);
+
+
+
 var discordStateService =
 
     new DiscordMessageStateService();
@@ -208,6 +232,10 @@ var boardMessageId =
 var mapStatsMessageId =
     configuredMapStatsMessageId
     ?? discordState.MapStatsMessageId;
+
+var advancedStatsMessageId =
+    configuredAdvancedStatsMessageId
+    ?? discordState.AdvancedStatsMessageId;
 
 var tiltWatchMessageId =
     configuredTiltWatchMessageId
@@ -419,6 +447,22 @@ var groupPlayerStats =
 
 
 
+var advancedPlayerInputs =
+
+    new List<AdvancedStatsPlayerInput>();
+
+
+
+var advancedStatsCutoff =
+
+    DateTimeOffset.UtcNow
+
+        .AddDays(-AdvancedStatsDays)
+
+        .ToUnixTimeMilliseconds();
+
+
+
 foreach (var fetchedPlayer in fetchedPlayers)
 
 {
@@ -438,6 +482,46 @@ foreach (var fetchedPlayer in fetchedPlayers)
     groupPlayerStats.Add(
 
         fullGroupStats);
+
+
+
+    var advancedMatchIds =
+
+        fullGroupStats.Items
+
+            .Select(x => x.Stats)
+
+            .Where(x =>
+
+                x.MatchFinishedAt >= advancedStatsCutoff &&
+
+                !string.IsNullOrWhiteSpace(x.MatchId))
+
+            .OrderByDescending(x => x.MatchFinishedAt)
+
+            .Select(x => x.MatchId)
+
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+
+            .Take(AdvancedStatsMatchLimit)
+
+            .ToList();
+
+
+
+    advancedPlayerInputs.Add(
+
+        new AdvancedStatsPlayerInput
+
+        {
+
+            Name = fetchedPlayer.Player.Nickname,
+
+            Steam64Id = fetchedPlayer.Player.Steam64Id,
+
+            FaceitMatchIds = advancedMatchIds
+
+        });
 
 
 
@@ -611,53 +695,33 @@ foreach (var fetchedPlayer in fetchedPlayers)
 
 // --------------------------------------------------
 
-// LEETIFY TEST - SENASTE GRUPPMATCHERNA
+// PLAYER ANALYTICS
 
 // --------------------------------------------------
 
 
 
-var recentGroupMatchIds =
+var advancedPlayerStats =
 
-    groupPlayerStats
+    await advancedStatsService.CalculateAsync(
 
-        .SelectMany(x => x.Items)
-
-        .Select(x => x.Stats)
-
-        .Where(x =>
-
-            !string.IsNullOrWhiteSpace(x.MatchId))
-
-        .GroupBy(
-
-            x => x.MatchId,
-
-            StringComparer.OrdinalIgnoreCase)
-
-        .Select(group => new
-
-        {
-
-            MatchId = group.Key,
-
-            FinishedAt = group.Max(x => x.MatchFinishedAt)
-
-        })
-
-        .OrderByDescending(x => x.FinishedAt)
-
-        .Select(x => x.MatchId)
-
-        .ToList();
+        advancedPlayerInputs);
 
 
 
-await leetifyClient.TryLogFirstAvailableFaceitMatchAsync(
+var advancedStatsMessage =
 
-    recentGroupMatchIds,
+    BuildAdvancedStatistics(
 
-    maxMatches: 10);
+        advancedPlayerStats,
+
+        AdvancedStatsMatchLimit,
+
+        AdvancedStatsDays,
+
+        MinimumAdvancedMatchesForBoard,
+
+        MinimumAdvancedMatchesForAwards);
 
 
 
@@ -942,6 +1006,42 @@ await discordStateService.SaveAsync(
 
 // --------------------------------------------------
 
+// PLAYER ANALYTICS
+
+// --------------------------------------------------
+
+
+
+var returnedAdvancedStatsMessageId =
+
+    await discordClient.PublishAdvancedStatsAsync(
+
+        content:
+
+            advancedStatsMessage,
+
+        messageId:
+
+            advancedStatsMessageId);
+
+
+
+discordState.AdvancedStatsMessageId =
+
+    returnedAdvancedStatsMessageId;
+
+
+
+await discordStateService.SaveAsync(
+
+    discordState);
+
+
+
+
+
+// --------------------------------------------------
+
 // TILT WATCH
 
 // --------------------------------------------------
@@ -1039,6 +1139,12 @@ Console.WriteLine(
 Console.WriteLine(
 
     $"Map ID: {returnedMapStatsMessageId}");
+
+
+
+Console.WriteLine(
+
+    $"Advanced Stats ID: {returnedAdvancedStatsMessageId}");
 
 
 
@@ -1677,6 +1783,292 @@ static string BuildLeaderboard(
         $"🕐 Uppdaterad <t:{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}:R>");
 
     return sb.ToString();
+}
+
+
+// --------------------------------------------------
+
+// PLAYER ANALYTICS
+
+// --------------------------------------------------
+
+
+
+static string BuildAdvancedStatistics(
+    IReadOnlyList<AdvancedPlayerStats> players,
+    int matchLimit,
+    int days,
+    int minimumMatchesForBoard,
+    int minimumMatchesForAwards)
+{
+    var sb = new StringBuilder();
+
+    var eligiblePlayers = players
+        .Where(x => x.AnalyzedGroupMatches >= minimumMatchesForBoard)
+        .OrderByDescending(x => x.LeetifyRating)
+        .ToList();
+
+    var excludedPlayers = players
+        .Where(x => x.AnalyzedGroupMatches < minimumMatchesForBoard)
+        .OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
+        .ToList();
+
+    if (eligiblePlayers.Count == 0)
+    {
+        sb.AppendLine(
+            $"Ingen spelare har minst {minimumMatchesForBoard} analyserade " +
+            $"gruppmatcher hos Leetify under de senaste {days} dagarna.");
+    }
+    else
+    {
+        for (var i = 0; i < eligiblePlayers.Count; i++)
+        {
+            var player = eligiblePlayers[i];
+            var displayName = EscapeDiscordMarkdown(player.Name);
+
+            var medal = i switch
+            {
+                0 => "🥇",
+                1 => "🥈",
+                2 => "🥉",
+                _ => "🔹"
+            };
+
+            sb.AppendLine(
+                $"{medal} **{displayName}** — " +
+                $"{player.AnalyzedGroupMatches}/{player.RequestedGroupMatches} gruppmatcher");
+
+            sb.AppendLine(
+                $"> ⭐ {FormatSignedAdvanced(player.LeetifyRating)} Leetify • " +
+                $"🎯 {player.AccuracyEnemySpottedPercentage:0}% acc • " +
+                $"⚡ {player.ReactionTimeMs:0} ms • " +
+                $"📐 {player.Preaim:0.0}° preaim");
+
+            sb.AppendLine(
+                $"> 🕺 {player.CounterStrafingPercentage:0}% counter-strafe • " +
+                $"🤝 {player.TradeKillsSuccessPercentage:0}% trades • " +
+                $"💡 {player.FlashbangHitFoeAverageDuration:0.0}s flash • " +
+                $"💣 {player.HeFoesDamageAverage:0.0} HE • " +
+                $"🐀 {player.SurvivalPercentage:0}% survival");
+
+            if (player.HasProfile)
+            {
+                sb.AppendLine(
+                    $"> **PROFILE** 🎯 Aim {FormatOptionalAdvanced(player.ProfileAim, "0.0")} • " +
+                    $"📍 Pos {FormatOptionalAdvanced(player.ProfilePositioning, "0.0")} • " +
+                    $"💣 Util {FormatOptionalAdvanced(player.ProfileUtility, "0.0")} • " +
+                    $"🧠 Clutch {FormatSignedAdvanced(player.ProfileClutch)} • " +
+                    $"⚔️ Opening {FormatSignedAdvanced(player.ProfileOpening)}");
+
+                sb.AppendLine(
+                    $"> ⚔️ Opening duels CT {FormatOptionalPercentageAdvanced(player.CtOpeningDuelSuccessPercentage)} / " +
+                    $"T {FormatOptionalPercentageAdvanced(player.TOpeningDuelSuccessPercentage)} • " +
+                    $"🐔 **{player.CowardiceIndex:0}/100** — {player.PlayStyle}");
+            }
+            else
+            {
+                sb.AppendLine(
+                    $"> **PROFILE** saknas hos Leetify • " +
+                    $"🐔 **{player.CowardiceIndex:0}/100** — {player.PlayStyle}");
+            }
+
+            sb.AppendLine();
+        }
+
+        sb.AppendLine("━━━━━━━━━━━━━━━━━━");
+        sb.AppendLine("### 🏅 ADVANCED UTMÄRKELSER");
+        sb.AppendLine();
+
+        var awardPlayers = eligiblePlayers
+            .Where(x => x.AnalyzedGroupMatches >= minimumMatchesForAwards)
+            .ToList();
+
+        if (awardPlayers.Count == 0)
+        {
+            sb.AppendLine(
+                $"*Minst {minimumMatchesForAwards} analyserade gruppmatcher krävs " +
+                "för Advanced-utmärkelser.*");
+            sb.AppendLine();
+        }
+        else
+        {
+            var fastestReaction = awardPlayers
+                .Where(x => x.ReactionTimeMs > 0)
+                .OrderBy(x => x.ReactionTimeMs)
+                .FirstOrDefault();
+
+            var bestPreaim = awardPlayers
+                .Where(x => x.Preaim > 0)
+                .OrderBy(x => x.Preaim)
+                .FirstOrDefault();
+
+            var bestCounterStrafe = awardPlayers
+                .MaxBy(x => x.CounterStrafingPercentage)!;
+
+            var bestTrader = awardPlayers
+                .MaxBy(x => x.TradeKillsSuccessPercentage)!;
+
+            var bestFlash = awardPlayers
+                .MaxBy(x => x.FlashbangHitFoeAverageDuration)!;
+
+            var bestHe = awardPlayers
+                .MaxBy(x => x.HeFoesDamageAverage)!;
+
+            var bestOpening = awardPlayers
+                .Where(x => x.ProfileOpening.HasValue)
+                .OrderByDescending(x => x.ProfileOpening)
+                .FirstOrDefault();
+
+            var mostCowardly = awardPlayers
+                .MaxBy(x => x.CowardiceIndex)!;
+
+            var mostFrontline = awardPlayers
+                .MinBy(x => x.CowardiceIndex)!;
+
+            if (fastestReaction is not null)
+            {
+                AppendAward(
+                    sb,
+                    "⚡",
+                    "SNABBAST PÅ AVTRYCKAREN",
+                    $"{EscapeDiscordMarkdown(fastestReaction.Name)} — " +
+                    $"{fastestReaction.ReactionTimeMs:0} ms");
+            }
+
+            if (bestPreaim is not null)
+            {
+                AppendAward(
+                    sb,
+                    "📐",
+                    "HÖRNINSPEKTÖREN",
+                    $"{EscapeDiscordMarkdown(bestPreaim.Name)} — " +
+                    $"{bestPreaim.Preaim:0.0}° preaim");
+            }
+
+            AppendAward(
+                sb,
+                "🕺",
+                "BROMSPEDALEN",
+                $"{EscapeDiscordMarkdown(bestCounterStrafe.Name)} — " +
+                $"{bestCounterStrafe.CounterStrafingPercentage:0}% counter-strafe");
+
+            AppendAward(
+                sb,
+                "🤝",
+                "FACKFÖRENINGEN",
+                $"{EscapeDiscordMarkdown(bestTrader.Name)} — " +
+                $"{bestTrader.TradeKillsSuccessPercentage:0}% trade success");
+
+            AppendAward(
+                sb,
+                "💡",
+                "ÖGONLÄKAREN",
+                $"{EscapeDiscordMarkdown(bestFlash.Name)} — " +
+                $"{bestFlash.FlashbangHitFoeAverageDuration:0.0}s flash duration");
+
+            AppendAward(
+                sb,
+                "💣",
+                "GRANATEXPERTEN",
+                $"{EscapeDiscordMarkdown(bestHe.Name)} — " +
+                $"{bestHe.HeFoesDamageAverage:0.0} HE damage");
+
+            if (bestOpening is not null)
+            {
+                AppendAward(
+                    sb,
+                    "⚔️",
+                    "DÖRRSPARKAREN",
+                    $"{EscapeDiscordMarkdown(bestOpening.Name)} — " +
+                    $"{FormatSignedAdvanced(bestOpening.ProfileOpening)} Opening rating");
+            }
+
+            AppendAward(
+                sb,
+                "🐔",
+                "BAKRADSOPERATÖREN",
+                $"{EscapeDiscordMarkdown(mostCowardly.Name)} — " +
+                $"{mostCowardly.CowardiceIndex:0}/100 feghetsindex");
+
+            AppendAward(
+                sb,
+                "🦍",
+                "FÖRST IN",
+                $"{EscapeDiscordMarkdown(mostFrontline.Name)} — " +
+                $"{mostFrontline.CowardiceIndex:0}/100 feghetsindex");
+        }
+    }
+
+    if (excludedPlayers.Count > 0)
+    {
+        sb.AppendLine(
+            $"🚫 **Ej kvalificerade för Player Analytics:** " +
+            string.Join(
+                ", ",
+                excludedPlayers.Select(x =>
+                    $"{EscapeDiscordMarkdown(x.Name)} " +
+                    $"({x.AnalyzedGroupMatches}/{x.RequestedGroupMatches})")));
+        sb.AppendLine();
+    }
+
+    sb.AppendLine(
+        $"*Gruppdelen använder upp till {matchLimit} gruppmatcher per spelare " +
+        $"från de senaste {days} dagarna. Minst {minimumMatchesForBoard} " +
+        $"analyserade matcher krävs för tavlan och {minimumMatchesForAwards} för utmärkelser.*");
+
+    sb.AppendLine(
+        "*PROFILE-raden är Leetifys övergripande profilstatistik och är inte begränsad till gruppmatcherna.*");
+
+    sb.AppendLine(
+        "*🐔 Feghetsindex är Faceit Police egen skämtmetric, relativ inom gruppen, " +
+        "baserad på survival, trade opportunities och utility kvar vid död. Det är inte en Leetify-metric.*");
+
+    sb.AppendLine(
+        "*Data från Leetify: <https://leetify.com/>* ");
+
+    sb.AppendLine();
+    sb.AppendLine(
+        $"🕐 Uppdaterad <t:{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}:R>");
+
+    return sb.ToString();
+}
+
+
+static string FormatSignedAdvanced(double value)
+{
+    return value.ToString(
+        "+0.000;-0.000;0.000",
+        CultureInfo.InvariantCulture);
+}
+
+
+static string FormatSignedAdvanced(double? value)
+{
+    return value.HasValue
+        ? FormatSignedAdvanced(value.Value)
+        : "–";
+}
+
+
+static string FormatOptionalAdvanced(
+    double? value,
+    string format)
+{
+    return value.HasValue
+        ? value.Value.ToString(
+            format,
+            CultureInfo.InvariantCulture)
+        : "–";
+}
+
+
+static string FormatOptionalPercentageAdvanced(double? value)
+{
+    return value.HasValue
+        ? value.Value.ToString(
+            "0.0",
+            CultureInfo.InvariantCulture) + "%"
+        : "–";
 }
 
 

@@ -10,6 +10,9 @@ public sealed class FaceitPlayer
     [JsonPropertyName("nickname")]
     public string Nickname { get; set; } = "";
 
+    [JsonPropertyName("steam_id_64")]
+    public string Steam64Id { get; set; } = "";
+
     [JsonPropertyName("games")]
     public Dictionary<string, FaceitGame> Games { get; set; } = [];
 }
