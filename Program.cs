@@ -24,7 +24,9 @@ const int ActivityDays = 30;
 
 const int MinimumGroupPlayersPerMatch = 3;
 
-const int MinimumGroupMatchesForRanking = 3;
+const int MinimumGroupMatchesForRanking = 2;
+
+
 
 
 
@@ -641,9 +643,19 @@ var rankingPlayers =
 
 
 
-foreach (var excludedPlayer in
-         allPlayers.Where(
-             x => x.Matches < MinimumGroupMatchesForRanking))
+var excludedPlayers =
+
+    allPlayers
+
+        .Where(
+
+            x => x.Matches < MinimumGroupMatchesForRanking)
+
+        .ToList();
+
+
+
+foreach (var excludedPlayer in excludedPlayers)
 
 {
 
@@ -669,6 +681,31 @@ var orderedPlayers =
 
         .ToList();
 
+
+
+
+
+static string FormatExcludedPlayers(
+
+    IReadOnlyList<PlayerLeaderboardEntry> excludedPlayers,
+
+    int rankingWindow)
+
+{
+
+    return string.Join(
+
+        ", ",
+
+        excludedPlayers
+
+            .OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
+
+            .Select(
+
+                x => $"{x.Name} ({x.Matches}/{rankingWindow})"));
+
+}
 
 
 
@@ -753,7 +790,9 @@ var leaderboardMessage =
 
         MinimumGroupMatchesForRanking,
 
-        PlayerStatsMatchLimit);
+        PlayerStatsMatchLimit,
+
+        excludedPlayers);
 
 
 
@@ -1287,7 +1326,9 @@ static string BuildLeaderboard(
 
     int minimumGroupMatches,
 
-    int rankingWindow)
+    int rankingWindow,
+
+    IReadOnlyList<PlayerLeaderboardEntry> excludedPlayers)
 
 {
 
@@ -1309,7 +1350,19 @@ static string BuildLeaderboard(
 
 
 
-        sb.AppendLine();
+        if (excludedPlayers.Count > 0)
+
+        {
+
+            sb.AppendLine(
+
+                $"🚫 **Ej kvalificerade:** {FormatExcludedPlayers(excludedPlayers, rankingWindow)}");
+
+
+
+            sb.AppendLine();
+
+        }
 
 
 
@@ -1891,6 +1944,22 @@ static string BuildLeaderboard(
     sb.AppendLine(
 
         $"*Aktivitet baserad på matcher de senaste {activityDays} dagarna.*");
+
+
+
+    if (excludedPlayers.Count > 0)
+
+    {
+
+        sb.AppendLine();
+
+
+
+        sb.AppendLine(
+
+            $"🚫 **Ej kvalificerade:** {FormatExcludedPlayers(excludedPlayers, rankingWindow)}");
+
+    }
 
 
 
