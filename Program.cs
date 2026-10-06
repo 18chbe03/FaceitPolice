@@ -22,14 +22,6 @@ const int MapStatsMatchLimit = 50;
 
 const int ActivityDays = 30;
 
-const int AdvancedStatsMatchLimit = 20;
-
-const int AdvancedStatsDays = 30;
-
-const int MinimumAdvancedMatchesForBoard = 2;
-
-const int MinimumAdvancedMatchesForAwards = 5;
-
 const int MinimumGroupPlayersPerMatch = 3;
 
 const int MinimumGroupMatchesForRanking = 2;
@@ -93,22 +85,6 @@ var configuredMapStatsMessageId =
     Environment.GetEnvironmentVariable(
 
         "MAP_STATS_MESSAGE_ID");
-
-
-
-var configuredAdvancedStatsMessageId =
-
-    Environment.GetEnvironmentVariable(
-
-        "ADVANCED_STATS_MESSAGE_ID");
-
-
-
-var leetifyApiKey =
-
-    Environment.GetEnvironmentVariable(
-
-        "LEETIFY_API_KEY");
 
 
 
@@ -176,31 +152,13 @@ var groupMatchFilterService =
 
 
 
-var faceitAdvancedProbeService =
+var faceitAdvancedStatsService =
 
-    new FaceitAdvancedProbeService(
+    new FaceitAdvancedStatsService(
 
         httpClient,
 
         faceitApiKey);
-
-
-
-var leetifyClient =
-
-    new LeetifyClient(
-
-        httpClient,
-
-        leetifyApiKey);
-
-
-
-var advancedStatsService =
-
-    new AdvancedStatsService(
-
-        leetifyClient);
 
 
 
@@ -242,10 +200,6 @@ var boardMessageId =
 var mapStatsMessageId =
     configuredMapStatsMessageId
     ?? discordState.MapStatsMessageId;
-
-var advancedStatsMessageId =
-    configuredAdvancedStatsMessageId
-    ?? discordState.AdvancedStatsMessageId;
 
 var tiltWatchMessageId =
     configuredTiltWatchMessageId
@@ -447,59 +401,9 @@ Console.WriteLine(
 
 // --------------------------------------------------
 
-// FACEIT ADVANCED STATS - PROBE
+// POWER RANKING + FACEIT ADVANCED
 
 // --------------------------------------------------
-
-
-
-var faceitProbeMatchIds =
-
-    fetchedPlayers
-
-        .SelectMany(fetchedPlayer =>
-
-            groupMatchFilterService
-
-                .Filter(
-
-                    fetchedPlayer.FullStats,
-
-                    qualifiedMatchTeams)
-
-                .Items)
-
-        .Select(x => x.Stats)
-
-        .Where(x =>
-
-            !string.IsNullOrWhiteSpace(x.MatchId))
-
-        .OrderByDescending(x => x.MatchFinishedAt)
-
-        .Select(x => x.MatchId)
-
-        .Distinct(StringComparer.OrdinalIgnoreCase)
-
-        .Take(3)
-
-        .ToList();
-
-
-
-if (faceitProbeMatchIds.Count > 0)
-
-{
-
-    await faceitAdvancedProbeService.ProbeAsync(
-
-        fetchedPlayers[0].Player.PlayerId,
-
-        faceitProbeMatchIds,
-
-        maxMatches: 3);
-
-}
 
 
 
@@ -515,19 +419,11 @@ var groupPlayerStats =
 
 
 
-var advancedPlayerInputs =
+var recentGroupStatsByPlayerId =
 
-    new List<AdvancedStatsPlayerInput>();
+    new Dictionary<string, FaceitStatsResponse>(
 
-
-
-var advancedStatsCutoff =
-
-    DateTimeOffset.UtcNow
-
-        .AddDays(-AdvancedStatsDays)
-
-        .ToUnixTimeMilliseconds();
+        StringComparer.OrdinalIgnoreCase);
 
 
 
@@ -535,7 +431,7 @@ foreach (var fetchedPlayer in fetchedPlayers)
 
 {
 
-    // Kartstatistik: filtrera de senaste 50 matcherna.
+    // Kartstatistik: alla kvalificerade gruppmatcher bland de hämtade 50.
 
     var fullGroupStats =
 
@@ -553,49 +449,9 @@ foreach (var fetchedPlayer in fetchedPlayers)
 
 
 
-    var advancedMatchIds =
+    // Power Ranking: de senaste 10 matcherna totalt,
 
-        fullGroupStats.Items
-
-            .Select(x => x.Stats)
-
-            .Where(x =>
-
-                x.MatchFinishedAt >= advancedStatsCutoff &&
-
-                !string.IsNullOrWhiteSpace(x.MatchId))
-
-            .OrderByDescending(x => x.MatchFinishedAt)
-
-            .Select(x => x.MatchId)
-
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-
-            .Take(AdvancedStatsMatchLimit)
-
-            .ToList();
-
-
-
-    advancedPlayerInputs.Add(
-
-        new AdvancedStatsPlayerInput
-
-        {
-
-            Name = fetchedPlayer.Player.Nickname,
-
-            Steam64Id = fetchedPlayer.Player.Steam64Id,
-
-            FaceitMatchIds = advancedMatchIds
-
-        });
-
-
-
-    // Power Ranking: utgå fortfarande från de senaste 10
-
-    // matcherna totalt, men räkna bara gruppmatcher i det fönstret.
+    // men endast kvalificerade gruppmatcher räknas.
 
     var latestTen =
 
@@ -614,6 +470,14 @@ foreach (var fetchedPlayer in fetchedPlayers)
             latestTen,
 
             qualifiedMatchTeams);
+
+
+
+    recentGroupStatsByPlayerId[
+
+        fetchedPlayer.Player.PlayerId] =
+
+        recentGroupStats;
 
 
 
@@ -640,6 +504,12 @@ foreach (var fetchedPlayer in fetchedPlayers)
         new PlayerLeaderboardEntry
 
         {
+
+            PlayerId =
+
+                fetchedPlayer.Player.PlayerId,
+
+
 
             Name =
 
@@ -692,6 +562,12 @@ foreach (var fetchedPlayer in fetchedPlayers)
             Kd =
 
                 calculated.Kd,
+
+
+
+            Kr =
+
+                calculated.Kr,
 
 
 
@@ -759,37 +635,163 @@ foreach (var fetchedPlayer in fetchedPlayers)
 
 
 
+var advancedInputs =
+
+    allPlayers
+
+        .Where(x =>
+
+            x.Matches >= MinimumGroupMatchesForRanking)
+
+        .Select(x =>
+
+        {
+
+            var stats =
+
+                recentGroupStatsByPlayerId[x.PlayerId];
 
 
-// --------------------------------------------------
 
-// PLAYER ANALYTICS
+            var matchIds =
 
-// --------------------------------------------------
+                stats.Items
+
+                    .Select(item => item.Stats.MatchId)
+
+                    .Where(matchId =>
+
+                        !string.IsNullOrWhiteSpace(matchId))
+
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+
+                    .ToList();
 
 
 
-var advancedPlayerStats =
+            return new FaceitAdvancedStatsPlayerInput
 
-    await advancedStatsService.CalculateAsync(
+            {
 
-        advancedPlayerInputs);
+                PlayerId = x.PlayerId,
+
+                Name = x.Name,
+
+                MatchIds = matchIds
+
+            };
+
+        })
+
+        .ToList();
 
 
 
-var advancedStatsMessage =
+var advancedStatsByPlayerId =
 
-    BuildAdvancedStatistics(
+    await faceitAdvancedStatsService.CalculateAsync(
 
-        advancedPlayerStats,
+        advancedInputs);
 
-        AdvancedStatsMatchLimit,
 
-        AdvancedStatsDays,
 
-        MinimumAdvancedMatchesForBoard,
+foreach (var player in allPlayers)
 
-        MinimumAdvancedMatchesForAwards);
+{
+
+    if (!advancedStatsByPlayerId.TryGetValue(
+
+            player.PlayerId,
+
+            out var advanced))
+
+    {
+
+        continue;
+
+    }
+
+
+
+    player.AdvancedMatches =
+
+        advanced.AnalyzedMatches;
+
+
+
+    player.TotalEntryAttempts =
+
+        advanced.TotalEntryAttempts;
+
+
+
+    player.EntryAttemptsPerMatch =
+
+        advanced.AverageEntryAttemptsPerMatch;
+
+
+
+    player.EntryKillsPerMatch =
+
+        advanced.AverageEntryKillsPerMatch;
+
+
+
+    player.EntrySuccessPercentage =
+
+        advanced.EntrySuccessPercentage;
+
+
+
+    player.EntryRatePercentage =
+
+        advanced.EntryRatePercentage;
+
+
+
+    player.ClutchAttempts =
+
+        advanced.TotalClutchAttempts;
+
+
+
+    player.ClutchWinPercentage =
+
+        advanced.ClutchWinPercentage;
+
+
+
+    player.UtilityDamagePerRound =
+
+        advanced.UtilityDamagePerRound;
+
+
+
+    player.EnemiesFlashedPerRound =
+
+        advanced.EnemiesFlashedPerRound;
+
+
+
+    player.FlashSuccessPercentage =
+
+        advanced.FlashSuccessPercentage;
+
+}
+
+
+
+CalculateCowardiceIndexes(
+
+    allPlayers
+
+        .Where(x =>
+
+            x.Matches >= MinimumGroupMatchesForRanking &&
+
+            x.AdvancedMatches > 0)
+
+        .ToList());
 
 
 
@@ -1072,40 +1074,6 @@ await discordStateService.SaveAsync(
 
 
 
-// --------------------------------------------------
-
-// PLAYER ANALYTICS
-
-// --------------------------------------------------
-
-
-
-var returnedAdvancedStatsMessageId =
-
-    await discordClient.PublishAdvancedStatsAsync(
-
-        content:
-
-            advancedStatsMessage,
-
-        messageId:
-
-            advancedStatsMessageId);
-
-
-
-discordState.AdvancedStatsMessageId =
-
-    returnedAdvancedStatsMessageId;
-
-
-
-await discordStateService.SaveAsync(
-
-    discordState);
-
-
-
 
 
 // --------------------------------------------------
@@ -1207,12 +1175,6 @@ Console.WriteLine(
 Console.WriteLine(
 
     $"Map ID: {returnedMapStatsMessageId}");
-
-
-
-Console.WriteLine(
-
-    $"Advanced Stats ID: {returnedAdvancedStatsMessageId}");
 
 
 
@@ -1324,6 +1286,14 @@ static CalculatedStats CalculateStats(
 
 
 
+    var rounds =
+
+        matches.Sum(
+
+            x => ToInt(x.Rounds));
+
+
+
     var headshots =
 
         matches.Sum(
@@ -1389,6 +1359,18 @@ static CalculatedStats CalculateStats(
             : (double)kills /
 
               deaths;
+
+
+
+    var kr =
+
+        rounds == 0
+
+            ? 0
+
+            : (double)kills /
+
+              rounds;
 
 
 
@@ -1477,6 +1459,12 @@ static CalculatedStats CalculateStats(
         Kd =
 
             kd,
+
+
+
+        Kr =
+
+            kr,
 
 
 
@@ -1638,12 +1626,34 @@ static string BuildLeaderboard(
             $"> 📊 {player.Wins}V-{player.Losses}F " +
             $"({player.Matches} gruppmatcher) • " +
             $"**{player.WinRate:0}% vinst** • " +
-            $"⚔️ {player.Kd:0.00} K/D");
+            $"⚔️ {player.Kd:0.00} K/D • " +
+            $"🔫 {player.Kr:0.00} K/R");
         sb.AppendLine(
             $"> 💣 {player.AverageKills:0.0} AVG • " +
             $"💥 {player.Adr:0.0} ADR • " +
             $"🎯 {player.HeadshotPercentage:0}% HS" +
             $"{FormatStreak(player.Streak)}");
+
+        if (player.AdvancedMatches > 0)
+        {
+            sb.AppendLine(
+                $"> 🚪 {player.EntryKillsPerMatch:0.00} entry kills/m • " +
+                $"⚡ {player.EntryAttemptsPerMatch:0.00} entrydueller/m • " +
+                $"✅ {player.EntrySuccessPercentage:0}% vunna");
+
+            sb.AppendLine(
+                $"> 🧠 {FormatClutch(player)} • " +
+                $"💣 {player.UtilityDamagePerRound:0.0} util dmg/r • " +
+                $"💡 {player.EnemiesFlashedPerRound:0.00} flashed/r • " +
+                $"{FormatPlayStyle(player)}" +
+                $"{FormatAdvancedCoverage(player)}");
+        }
+        else
+        {
+            sb.AppendLine(
+                "> 🧠 Advanced FACEIT-statistik saknas för gruppmatcherna.");
+        }
+
         sb.AppendLine();
     }
 
@@ -1676,7 +1686,6 @@ static string BuildLeaderboard(
         var damageDealer = awardPlayers.MaxBy(x => x.Adr)!;
         var lowestAdr = awardPlayers.MinBy(x => x.Adr)!;
         var mvpFarmer = awardPlayers.MaxBy(x => x.AverageMvps)!;
-        var walkingDonation = awardPlayers.MinBy(x => x.Kd)!;
         var lowestHs = awardPlayers.MinBy(x => x.HeadshotPercentage)!;
         var lowestMvps = awardPlayers.MinBy(x => x.AverageMvps)!;
         var lowestWinRate = awardPlayers.MinBy(x => x.WinRate)!;
@@ -1819,6 +1828,115 @@ static string BuildLeaderboard(
             "SOFFGENERALEN",
             $"{EscapeDiscordMarkdown(leastActive.Name)} — " +
             $"{leastActive.ActivityMatches} matcher senaste {activityDays} dagarna");
+
+        var advancedAwardPlayers =
+            awardPlayers
+                .Where(x =>
+                    x.AdvancedMatches >= minimumGroupMatchesForAwards)
+                .ToList();
+
+        if (advancedAwardPlayers.Count > 0)
+        {
+            var firstIn =
+                advancedAwardPlayers
+                    .MaxBy(x => x.EntryAttemptsPerMatch)!;
+
+            var doorKicker =
+                advancedAwardPlayers
+                    .MaxBy(x => x.EntryKillsPerMatch)!;
+
+            var entrySuccessCandidates =
+                advancedAwardPlayers
+                    .Where(x => x.TotalEntryAttempts >= 5)
+                    .ToList();
+
+            var duelKing =
+                entrySuccessCandidates
+                    .MaxBy(x => x.EntrySuccessPercentage);
+
+            var clutchCandidates =
+                advancedAwardPlayers
+                    .Where(x =>
+                        x.ClutchAttempts >= 2 &&
+                        x.ClutchWinPercentage.HasValue)
+                    .ToList();
+
+            var clutchKing =
+                clutchCandidates
+                    .MaxBy(x => x.ClutchWinPercentage);
+
+            var grenadeMaster =
+                advancedAwardPlayers
+                    .MaxBy(x => x.UtilityDamagePerRound)!;
+
+            var flashMaster =
+                advancedAwardPlayers
+                    .MaxBy(x => x.EnemiesFlashedPerRound)!;
+
+            var backlineOperator =
+                advancedAwardPlayers
+                    .Where(x => x.CowardiceIndex.HasValue)
+                    .MaxBy(x => x.CowardiceIndex);
+
+            AppendAward(
+                sb,
+                "🦍",
+                "FÖRST IN",
+                $"{EscapeDiscordMarkdown(firstIn.Name)} — " +
+                $"{firstIn.EntryAttemptsPerMatch:0.00} entrydueller/match");
+
+            AppendAward(
+                sb,
+                "🚪",
+                "DÖRRSPARKAREN",
+                $"{EscapeDiscordMarkdown(doorKicker.Name)} — " +
+                $"{doorKicker.EntryKillsPerMatch:0.00} entry kills/match");
+
+            if (duelKing is not null)
+            {
+                AppendAward(
+                    sb,
+                    "🎯",
+                    "ENTRY-DUELLKUNGEN",
+                    $"{EscapeDiscordMarkdown(duelKing.Name)} — " +
+                    $"{duelKing.EntrySuccessPercentage:0}% vunna entrydueller");
+            }
+
+            if (clutchKing is not null)
+            {
+                AppendAward(
+                    sb,
+                    "🧠",
+                    "CLUTCHKUNGEN",
+                    $"{EscapeDiscordMarkdown(clutchKing.Name)} — " +
+                    $"{clutchKing.ClutchWinPercentage!.Value:0}% " +
+                    $"({clutchKing.ClutchAttempts} försök)");
+            }
+
+            AppendAward(
+                sb,
+                "💣",
+                "SPRÄNGMÄSTAREN",
+                $"{EscapeDiscordMarkdown(grenadeMaster.Name)} — " +
+                $"{grenadeMaster.UtilityDamagePerRound:0.0} utility damage/runda");
+
+            AppendAward(
+                sb,
+                "💡",
+                "BLÄNDVERKET",
+                $"{EscapeDiscordMarkdown(flashMaster.Name)} — " +
+                $"{flashMaster.EnemiesFlashedPerRound:0.00} fiender flashade/runda");
+
+            if (backlineOperator is not null)
+            {
+                AppendAward(
+                    sb,
+                    "🐔",
+                    "BAKRADSOPERATÖREN",
+                    $"{EscapeDiscordMarkdown(backlineOperator.Name)} — " +
+                    $"{backlineOperator.CowardiceIndex}/100 feghetsindex");
+            }
+        }
     }
 
     sb.AppendLine(
@@ -1829,6 +1947,15 @@ static string BuildLeaderboard(
 
     sb.AppendLine(
         $"*Aktivitet baserad på matcher de senaste {activityDays} dagarna.*");
+
+    sb.AppendLine(
+        "*Advanced-statistik hämtas från FACEIT:s matchstatistik för samma gruppmatcher. " +
+        "Entry kills = vunna opening/entry-dueller. Clutch% kombinerar 1v1 och 1v2.*");
+
+    sb.AppendLine(
+        "*🐔 Feghetsindex är Faceit Police egen skämtmetric, relativ inom gruppen. " +
+        "Den baseras på hur ofta spelaren tar entrydueller, inte på om duellerna vinns. " +
+        "Högre värde = mer avvaktande spelstil.*");
 
     if (awardIneligiblePlayers.Count > 0)
     {
@@ -1854,289 +1981,106 @@ static string BuildLeaderboard(
 }
 
 
-// --------------------------------------------------
-
-// PLAYER ANALYTICS
-
-// --------------------------------------------------
-
-
-
-static string BuildAdvancedStatistics(
-    IReadOnlyList<AdvancedPlayerStats> players,
-    int matchLimit,
-    int days,
-    int minimumMatchesForBoard,
-    int minimumMatchesForAwards)
+static void CalculateCowardiceIndexes(
+    IReadOnlyList<PlayerLeaderboardEntry> players)
 {
-    var sb = new StringBuilder();
+    if (players.Count == 0)
+        return;
 
-    var eligiblePlayers = players
-        .Where(x => x.AnalyzedGroupMatches >= minimumMatchesForBoard)
-        .OrderByDescending(x => x.LeetifyRating)
-        .ToList();
+    var minEntryRate =
+        players.Min(x => x.EntryRatePercentage);
 
-    var excludedPlayers = players
-        .Where(x => x.AnalyzedGroupMatches < minimumMatchesForBoard)
-        .OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
-        .ToList();
+    var maxEntryRate =
+        players.Max(x => x.EntryRatePercentage);
 
-    if (eligiblePlayers.Count == 0)
+    var minEntryAttempts =
+        players.Min(x => x.EntryAttemptsPerMatch);
+
+    var maxEntryAttempts =
+        players.Max(x => x.EntryAttemptsPerMatch);
+
+    foreach (var player in players)
     {
-        sb.AppendLine(
-            $"Ingen spelare har minst {minimumMatchesForBoard} analyserade " +
-            $"gruppmatcher hos Leetify under de senaste {days} dagarna.");
+        var normalizedEntryRate =
+            NormalizeRelative(
+                player.EntryRatePercentage,
+                minEntryRate,
+                maxEntryRate);
+
+        var normalizedEntryAttempts =
+            NormalizeRelative(
+                player.EntryAttemptsPerMatch,
+                minEntryAttempts,
+                maxEntryAttempts);
+
+        var aggressionScore =
+            normalizedEntryRate * 0.70 +
+            normalizedEntryAttempts * 0.30;
+
+        player.CowardiceIndex =
+            (int)Math.Round(
+                (1 - aggressionScore) * 100,
+                MidpointRounding.AwayFromZero);
     }
-    else
-    {
-        for (var i = 0; i < eligiblePlayers.Count; i++)
+}
+
+
+static double NormalizeRelative(
+    double value,
+    double minimum,
+    double maximum)
+{
+    if (Math.Abs(maximum - minimum) < 0.000001)
+        return 0.5;
+
+    return Math.Clamp(
+        (value - minimum) / (maximum - minimum),
+        0,
+        1);
+}
+
+
+static string FormatClutch(
+    PlayerLeaderboardEntry player)
+{
+    if (!player.ClutchWinPercentage.HasValue)
+        return "clutch –";
+
+    return $"{player.ClutchWinPercentage.Value:0}% clutch " +
+           $"({player.ClutchAttempts} försök)";
+}
+
+
+static string FormatAdvancedCoverage(
+    PlayerLeaderboardEntry player)
+{
+    if (player.AdvancedMatches >= player.Matches)
+        return "";
+
+    return $" • ⚠️ {player.AdvancedMatches}/{player.Matches} adv";
+}
+
+
+static string FormatPlayStyle(
+    PlayerLeaderboardEntry player)
+{
+    if (!player.CowardiceIndex.HasValue)
+        return "🐔 –";
+
+    var index =
+        player.CowardiceIndex.Value;
+
+    var label =
+        index switch
         {
-            var player = eligiblePlayers[i];
-            var displayName = EscapeDiscordMarkdown(player.Name);
+            <= 25 => "🦍 FRONTLINJE",
+            <= 45 => "🔥 AGGRESSIV",
+            <= 65 => "⚖️ BALANSERAD",
+            <= 80 => "🐢 AVVAKTANDE",
+            _ => "🐔 BAKRADSOPERATÖR"
+        };
 
-            var medal = i switch
-            {
-                0 => "🥇",
-                1 => "🥈",
-                2 => "🥉",
-                _ => "🔹"
-            };
-
-            sb.AppendLine(
-                $"{medal} **{displayName}** — " +
-                $"{player.AnalyzedGroupMatches}/{player.RequestedGroupMatches} gruppmatcher");
-
-            sb.AppendLine(
-                $"> ⭐ {FormatSignedAdvanced(player.LeetifyRating)} Leetify • " +
-                $"🎯 {player.AccuracyEnemySpottedPercentage:0}% acc • " +
-                $"⚡ {player.ReactionTimeMs:0} ms • " +
-                $"📐 {player.Preaim:0.0}° preaim");
-
-            sb.AppendLine(
-                $"> 🕺 {player.CounterStrafingPercentage:0}% counter-strafe • " +
-                $"🤝 {player.TradeKillsSuccessPercentage:0}% trades • " +
-                $"💡 {player.FlashbangHitFoeAverageDuration:0.0}s flash • " +
-                $"💣 {player.HeFoesDamageAverage:0.0} HE • " +
-                $"🐀 {player.SurvivalPercentage:0}% survival");
-
-            if (player.HasProfile)
-            {
-                sb.AppendLine(
-                    $"> **PROFILE** 🎯 Aim {FormatOptionalAdvanced(player.ProfileAim, "0.0")} • " +
-                    $"📍 Pos {FormatOptionalAdvanced(player.ProfilePositioning, "0.0")} • " +
-                    $"💣 Util {FormatOptionalAdvanced(player.ProfileUtility, "0.0")} • " +
-                    $"🧠 Clutch {FormatOptionalSignedAdvanced(player.ProfileClutch)} • " +
-                    $"⚔️ Opening {FormatOptionalSignedAdvanced(player.ProfileOpening)}");
-
-                sb.AppendLine(
-                    $"> ⚔️ Opening duels CT {FormatOptionalPercentageAdvanced(player.CtOpeningDuelSuccessPercentage)} / " +
-                    $"T {FormatOptionalPercentageAdvanced(player.TOpeningDuelSuccessPercentage)} • " +
-                    $"🐔 **{player.CowardiceIndex:0}/100** — {player.PlayStyle}");
-            }
-            else
-            {
-                sb.AppendLine(
-                    $"> **PROFILE** saknas hos Leetify • " +
-                    $"🐔 **{player.CowardiceIndex:0}/100** — {player.PlayStyle}");
-            }
-
-            sb.AppendLine();
-        }
-
-        sb.AppendLine("━━━━━━━━━━━━━━━━━━");
-        sb.AppendLine("### 🏅 ADVANCED UTMÄRKELSER");
-        sb.AppendLine();
-
-        var awardPlayers = eligiblePlayers
-            .Where(x => x.AnalyzedGroupMatches >= minimumMatchesForAwards)
-            .ToList();
-
-        if (awardPlayers.Count == 0)
-        {
-            sb.AppendLine(
-                $"*Minst {minimumMatchesForAwards} analyserade gruppmatcher krävs " +
-                "för Advanced-utmärkelser.*");
-            sb.AppendLine();
-        }
-        else
-        {
-            var fastestReaction = awardPlayers
-                .Where(x => x.ReactionTimeMs > 0)
-                .OrderBy(x => x.ReactionTimeMs)
-                .FirstOrDefault();
-
-            var bestPreaim = awardPlayers
-                .Where(x => x.Preaim > 0)
-                .OrderBy(x => x.Preaim)
-                .FirstOrDefault();
-
-            var bestCounterStrafe = awardPlayers
-                .MaxBy(x => x.CounterStrafingPercentage)!;
-
-            var bestTrader = awardPlayers
-                .MaxBy(x => x.TradeKillsSuccessPercentage)!;
-
-            var bestFlash = awardPlayers
-                .MaxBy(x => x.FlashbangHitFoeAverageDuration)!;
-
-            var bestHe = awardPlayers
-                .MaxBy(x => x.HeFoesDamageAverage)!;
-
-            var bestOpening = awardPlayers
-                .Where(x => x.ProfileOpening.HasValue)
-                .OrderByDescending(x => x.ProfileOpening)
-                .FirstOrDefault();
-
-            var mostCowardly = awardPlayers
-                .MaxBy(x => x.CowardiceIndex)!;
-
-            var mostFrontline = awardPlayers
-                .MinBy(x => x.CowardiceIndex)!;
-
-            if (fastestReaction is not null)
-            {
-                AppendAward(
-                    sb,
-                    "⚡",
-                    "SNABBAST PÅ AVTRYCKAREN",
-                    $"{EscapeDiscordMarkdown(fastestReaction.Name)} — " +
-                    $"{fastestReaction.ReactionTimeMs:0} ms");
-            }
-
-            if (bestPreaim is not null)
-            {
-                AppendAward(
-                    sb,
-                    "📐",
-                    "HÖRNINSPEKTÖREN",
-                    $"{EscapeDiscordMarkdown(bestPreaim.Name)} — " +
-                    $"{bestPreaim.Preaim:0.0}° preaim");
-            }
-
-            AppendAward(
-                sb,
-                "🕺",
-                "BROMSPEDALEN",
-                $"{EscapeDiscordMarkdown(bestCounterStrafe.Name)} — " +
-                $"{bestCounterStrafe.CounterStrafingPercentage:0}% counter-strafe");
-
-            AppendAward(
-                sb,
-                "🤝",
-                "FACKFÖRENINGEN",
-                $"{EscapeDiscordMarkdown(bestTrader.Name)} — " +
-                $"{bestTrader.TradeKillsSuccessPercentage:0}% trade success");
-
-            AppendAward(
-                sb,
-                "💡",
-                "ÖGONLÄKAREN",
-                $"{EscapeDiscordMarkdown(bestFlash.Name)} — " +
-                $"{bestFlash.FlashbangHitFoeAverageDuration:0.0}s flash duration");
-
-            AppendAward(
-                sb,
-                "💣",
-                "GRANATEXPERTEN",
-                $"{EscapeDiscordMarkdown(bestHe.Name)} — " +
-                $"{bestHe.HeFoesDamageAverage:0.0} HE damage");
-
-            if (bestOpening is not null)
-            {
-                AppendAward(
-                    sb,
-                    "⚔️",
-                    "DÖRRSPARKAREN",
-                    $"{EscapeDiscordMarkdown(bestOpening.Name)} — " +
-                    $"{FormatOptionalSignedAdvanced(bestOpening.ProfileOpening)} Opening rating");
-            }
-
-            AppendAward(
-                sb,
-                "🐔",
-                "BAKRADSOPERATÖREN",
-                $"{EscapeDiscordMarkdown(mostCowardly.Name)} — " +
-                $"{mostCowardly.CowardiceIndex:0}/100 feghetsindex");
-
-            AppendAward(
-                sb,
-                "🦍",
-                "FÖRST IN",
-                $"{EscapeDiscordMarkdown(mostFrontline.Name)} — " +
-                $"{mostFrontline.CowardiceIndex:0}/100 feghetsindex");
-        }
-    }
-
-    if (excludedPlayers.Count > 0)
-    {
-        sb.AppendLine(
-            $"🚫 **Ej kvalificerade för Player Analytics:** " +
-            string.Join(
-                ", ",
-                excludedPlayers.Select(x =>
-                    $"{EscapeDiscordMarkdown(x.Name)} " +
-                    $"({x.AnalyzedGroupMatches}/{x.RequestedGroupMatches})")));
-        sb.AppendLine();
-    }
-
-    sb.AppendLine(
-        $"*Gruppdelen använder upp till {matchLimit} gruppmatcher per spelare " +
-        $"från de senaste {days} dagarna. Minst {minimumMatchesForBoard} " +
-        $"analyserade matcher krävs för tavlan och {minimumMatchesForAwards} för utmärkelser.*");
-
-    sb.AppendLine(
-        "*PROFILE-raden är Leetifys övergripande profilstatistik och är inte begränsad till gruppmatcherna.*");
-
-    sb.AppendLine(
-        "*🐔 Feghetsindex är Faceit Police egen skämtmetric, relativ inom gruppen, " +
-        "baserad på survival, trade opportunities och utility kvar vid död. Det är inte en Leetify-metric.*");
-
-    sb.AppendLine(
-        "*Data från Leetify: <https://leetify.com/>* ");
-
-    sb.AppendLine();
-    sb.AppendLine(
-        $"🕐 Uppdaterad <t:{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}:R>");
-
-    return sb.ToString();
-}
-
-
-static string FormatSignedAdvanced(double value)
-{
-    return value.ToString(
-        "+0.000;-0.000;0.000",
-        CultureInfo.InvariantCulture);
-}
-
-
-static string FormatOptionalSignedAdvanced(double? value)
-{
-    return value.HasValue
-        ? FormatSignedAdvanced(value.Value)
-        : "–";
-}
-
-
-static string FormatOptionalAdvanced(
-    double? value,
-    string format)
-{
-    return value.HasValue
-        ? value.Value.ToString(
-            format,
-            CultureInfo.InvariantCulture)
-        : "–";
-}
-
-
-static string FormatOptionalPercentageAdvanced(double? value)
-{
-    return value.HasValue
-        ? value.Value.ToString(
-            "0.0",
-            CultureInfo.InvariantCulture) + "%"
-        : "–";
+    return $"{label} {index}/100";
 }
 
 
@@ -2669,6 +2613,10 @@ internal sealed class CalculatedStats
 
 
 
+    public double Kr { get; init; }
+
+
+
     public double AverageKills { get; init; }
 
 
@@ -2702,6 +2650,10 @@ internal sealed class CalculatedStats
 internal sealed class PlayerLeaderboardEntry
 
 {
+
+    public string PlayerId { get; init; } = "";
+
+
 
     public string Name { get; init; } = "";
 
@@ -2743,6 +2695,10 @@ internal sealed class PlayerLeaderboardEntry
 
 
 
+    public double Kr { get; init; }
+
+
+
     public double AverageKills { get; init; }
 
 
@@ -2768,6 +2724,54 @@ internal sealed class PlayerLeaderboardEntry
 
 
     public double AverageMvps { get; init; }
+
+
+
+    public int AdvancedMatches { get; set; }
+
+
+
+    public int TotalEntryAttempts { get; set; }
+
+
+
+    public double EntryAttemptsPerMatch { get; set; }
+
+
+
+    public double EntryKillsPerMatch { get; set; }
+
+
+
+    public double EntrySuccessPercentage { get; set; }
+
+
+
+    public double EntryRatePercentage { get; set; }
+
+
+
+    public int ClutchAttempts { get; set; }
+
+
+
+    public double? ClutchWinPercentage { get; set; }
+
+
+
+    public double UtilityDamagePerRound { get; set; }
+
+
+
+    public double EnemiesFlashedPerRound { get; set; }
+
+
+
+    public double FlashSuccessPercentage { get; set; }
+
+
+
+    public int? CowardiceIndex { get; set; }
 
 
 

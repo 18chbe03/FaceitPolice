@@ -65,28 +65,6 @@ public sealed class DiscordClient
     }
 
     // --------------------------------------------------
-    // PLAYER ANALYTICS
-    // --------------------------------------------------
-
-    public Task<string?> PublishAdvancedStatsAsync(
-        string content,
-        string? messageId,
-        CancellationToken cancellationToken = default)
-    {
-        return PublishTextMessageAsync(
-            title:
-                "🧠 PLAYER ANALYTICS",
-            continuationTitle:
-                "🧠 PLAYER ANALYTICS — FORTSÄTTNING",
-            content:
-                content,
-            messageId:
-                messageId,
-            cancellationToken:
-                cancellationToken);
-    }
-
-    // --------------------------------------------------
     // TEXTMEDDELANDE
     // --------------------------------------------------
 
