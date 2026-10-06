@@ -889,7 +889,7 @@ foreach (var excludedPlayer in excludedPlayers)
 
         $"({excludedPlayer.Matches}/{PlayerStatsMatchLimit} gruppmatcher, " +
 
-        $"minst {MinimumGroupMatchesForRanking} krävs)." );
+        $"minst {MinimumGroupMatchesForRanking} krävs).");
 
 }
 
@@ -1730,7 +1730,7 @@ static string BuildRanking(
         $"*🎭 Spelstil: 🦍 först in • 🔥 aggressiv • ⚖️ balanserad • 🐢 försiktig • 🐔 bakåt*");
 
     sb.AppendLine(
-        $"*🐷 Grisindex: 75% hur ofta du går först + 25% hur många entrydueller du tar. Låg = mer gas. Minst {minimumGroupMatches}/{rankingWindow} gruppmatcher.*");
+        $"*🐔 Kycklingindex: 75% hur ofta du går först + 25% hur många entrydueller du tar. Låg = mer gas. Minst {minimumGroupMatches}/{rankingWindow} gruppmatcher.*");
 
     if (excludedPlayers.Count > 0)
     {
@@ -1738,7 +1738,7 @@ static string BuildRanking(
             $"🚫 **Ej med:** {FormatExcludedPlayers(excludedPlayers, rankingWindow)} " +
             $"— minst {minimumGroupMatches} gruppmatcher krävs.");
     }
-    
+
     return sb.ToString();
 }
 
@@ -2020,11 +2020,11 @@ static string BuildAwards(
             if (backlineOperator is not null)
             {
                 AppendAward(
-                    sb,
-                    "🐔",
-                    "BAKRADSOPERATÖREN",
-                    $"{EscapeDiscordMarkdown(backlineOperator.Name)} — " +
-                    $"{backlineOperator.CowardiceIndex}/100 feghetsindex");
+     sb,
+     "🐔",
+     "BAKRADSOPERATÖREN",
+     $"{EscapeDiscordMarkdown(backlineOperator.Name)} — " +
+     $"{backlineOperator.CowardiceIndex}/100 kycklingindex");
             }
         }
     }
