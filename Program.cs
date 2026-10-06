@@ -1724,10 +1724,10 @@ static string BuildRanking(
         "*📊 V-F (gruppmatcher) • ⚔️ K/D • 💥 ADR • 🎯 HS*");
 
     sb.AppendLine(
-        "*🚪 entry kills/m • ⚡ entrydueller/m • ✅ vunna • 🧠 clutch • 🦍→🐔 spelstil*");
+        "*🚪 entry kills/m • ⚡ entrydueller/m • ✅ entry-vinst% • 🧠 clutch 1v1/1v2*");
 
     sb.AppendLine(
-        $"*Spelstil: låg siffra = först in, hög = mer bakåt. Minst {minimumGroupMatches}/{rankingWindow} gruppmatcher.*");
+        $"*🎭 Spelstil: 🦍 först in • 🔥 aggressiv • ⚖️ balanserad • 🐢 försiktig • 🐔 bakåt • minst {minimumGroupMatches}/{rankingWindow} gruppmatcher*");
 
     if (excludedPlayers.Count > 0)
     {
