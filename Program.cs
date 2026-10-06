@@ -88,6 +88,14 @@ var configuredMapStatsMessageId =
 
 
 
+var leetifyApiKey =
+
+    Environment.GetEnvironmentVariable(
+
+        "LEETIFY_API_KEY");
+
+
+
 var playersConfig =
 
     Environment.GetEnvironmentVariable(
@@ -149,6 +157,16 @@ var mapStatsService =
 var groupMatchFilterService =
 
     new GroupMatchFilterService();
+
+
+
+var leetifyClient =
+
+    new LeetifyClient(
+
+        httpClient,
+
+        leetifyApiKey);
 
 
 
@@ -588,6 +606,58 @@ foreach (var fetchedPlayer in fetchedPlayers)
 }
 
 
+
+
+
+// --------------------------------------------------
+
+// LEETIFY TEST - EN AV DE SENASTE GRUPPMATCHERNA
+
+// --------------------------------------------------
+
+
+
+var recentGroupMatchIds =
+
+    groupPlayerStats
+
+        .SelectMany(x => x.Items)
+
+        .Select(x => x.Stats)
+
+        .Where(x =>
+
+            !string.IsNullOrWhiteSpace(x.MatchId))
+
+        .GroupBy(
+
+            x => x.MatchId,
+
+            StringComparer.OrdinalIgnoreCase)
+
+        .Select(group => new
+
+        {
+
+            MatchId = group.Key,
+
+            FinishedAt = group.Max(x => x.MatchFinishedAt)
+
+        })
+
+        .OrderByDescending(x => x.FinishedAt)
+
+        .Select(x => x.MatchId)
+
+        .ToList();
+
+
+
+await leetifyClient.TryLogFirstAvailableFaceitMatchAsync(
+
+    recentGroupMatchIds,
+
+    maxAttempts: 5);
 
 
 
