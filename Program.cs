@@ -26,6 +26,8 @@ const int MinimumGroupPlayersPerMatch = 3;
 
 const int MinimumGroupMatchesForRanking = 2;
 
+const int MinimumGroupMatchesForAwards = 5;
+
 
 
 
@@ -559,6 +561,12 @@ foreach (var fetchedPlayer in fetchedPlayers)
 
 
 
+            AverageMvps =
+
+                calculated.AverageMvps,
+
+
+
             TripleKills =
 
                 calculated.TripleKills,
@@ -703,7 +711,7 @@ static string FormatExcludedPlayers(
 
             .Select(
 
-                x => $"{x.Name} ({x.Matches}/{rankingWindow})"));
+                x => $"{EscapeDiscordMarkdown(x.Name)} ({x.Matches}/{rankingWindow})"));
 
 }
 
@@ -789,6 +797,8 @@ var leaderboardMessage =
         ActivityDays,
 
         MinimumGroupMatchesForRanking,
+
+        MinimumGroupMatchesForAwards,
 
         PlayerStatsMatchLimit,
 
@@ -880,7 +890,7 @@ if (tiltWatchPlayer is not null)
 
     var tiltDescription =
 
-        $"**Tiltvarning: {tiltWatchPlayer.Name}**\n" +
+        $"**Tiltvarning: {EscapeDiscordMarkdown(tiltWatchPlayer.Name)}**\n" +
 
         $"📉 **{tiltWatchPlayer.Losses} förluster på " +
 
@@ -1118,6 +1128,14 @@ static CalculatedStats CalculateStats(
 
 
 
+    var averageMvps =
+
+        (double)mvps /
+
+        matches.Count;
+
+
+
     var kd =
 
         deaths == 0
@@ -1197,6 +1215,12 @@ static CalculatedStats CalculateStats(
         TotalMvps =
 
             mvps,
+
+
+
+        AverageMvps =
+
+            averageMvps,
 
 
 
@@ -1319,668 +1343,286 @@ static int CalculateStreak(
 
 
 static string BuildLeaderboard(
-
     IReadOnlyList<PlayerLeaderboardEntry> players,
-
     int activityDays,
-
     int minimumGroupMatches,
-
+    int minimumGroupMatchesForAwards,
     int rankingWindow,
-
     IReadOnlyList<PlayerLeaderboardEntry> excludedPlayers)
-
 {
-
-    var sb =
-
-        new StringBuilder();
-
-
+    var sb = new StringBuilder();
 
     if (players.Count == 0)
-
     {
-
         sb.AppendLine(
-
             $"Ingen spelare har minst {minimumGroupMatches} gruppmatcher " +
-
             $"bland sina senaste {rankingWindow} FACEIT-matcher.");
 
-
-
         if (excludedPlayers.Count > 0)
-
         {
-
             sb.AppendLine(
-
-                $"🚫 **Ej kvalificerade:** {FormatExcludedPlayers(excludedPlayers, rankingWindow)}");
-
-
-
+                $"🚫 **Ej kvalificerade för Power Ranking:** " +
+                $"{FormatExcludedPlayers(excludedPlayers, rankingWindow)}");
             sb.AppendLine();
-
         }
 
-
-
         sb.AppendLine(
-
             $"🕐 Uppdaterad <t:{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}:R>");
 
-
-
         return sb.ToString();
-
     }
 
-
-
-    for (var i = 0;
-
-         i < players.Count;
-
-         i++)
-
+    for (var i = 0; i < players.Count; i++)
     {
+        var player = players[i];
+        var displayName = EscapeDiscordMarkdown(player.Name);
 
-        var player =
+        var medal = i switch
+        {
+            0 => "🥇",
+            1 => "🥈",
+            2 => "🥉",
+            _ => "🔹"
+        };
 
-            players[i];
-
-
-
-        var medal =
-
-            i switch
-
-            {
-
-                0 => "🥇",
-
-                1 => "🥈",
-
-                2 => "🥉",
-
-                _ => "🔹"
-
-            };
-
-
-
+        sb.AppendLine($"{medal} **{displayName}**");
         sb.AppendLine(
-
-            $"{medal} **{player.Name}**");
-
-
-
-        sb.AppendLine(
-
             $"> LVL **{player.Level}** • " +
-
             $"**{player.Elo} ELO** " +
-
             $"{FormatEloDelta(player.EloDelta7Days)}");
-
-
-
         sb.AppendLine(
-
             $"> 📊 {player.Wins}V-{player.Losses}F " +
-
             $"({player.Matches} gruppmatcher) • " +
-
             $"**{player.WinRate:0}% vinst** • " +
-
             $"⚔️ {player.Kd:0.00} K/D");
-
-
-
         sb.AppendLine(
-
             $"> 💣 {player.AverageKills:0.0} AVG • " +
-
             $"💥 {player.Adr:0.0} ADR • " +
-
             $"🎯 {player.HeadshotPercentage:0}% HS" +
-
             $"{FormatStreak(player.Streak)}");
-
-
-
         sb.AppendLine();
-
     }
 
-
-
-    sb.AppendLine(
-
-        "━━━━━━━━━━━━━━━━━━");
-
-
-
-    sb.AppendLine(
-
-        "### 🏅 GRUPPENS UTMÄRKELSER");
-
-
-
+    sb.AppendLine("━━━━━━━━━━━━━━━━━━");
+    sb.AppendLine("### 🏅 GRUPPENS UTMÄRKELSER");
     sb.AppendLine();
 
+    var awardPlayers = players
+        .Where(x => x.Matches >= minimumGroupMatchesForAwards)
+        .ToList();
 
+    var awardIneligiblePlayers = players
+        .Where(x => x.Matches < minimumGroupMatchesForAwards)
+        .ToList();
 
-    var performancePlayers =
+    if (awardPlayers.Count == 0)
+    {
+        sb.AppendLine(
+            $"*Ingen spelare har minst {minimumGroupMatchesForAwards} gruppmatcher, " +
+            "så inga utmärkelser delas ut ännu.*");
+        sb.AppendLine();
+    }
+    else
+    {
+        var eloKing = awardPlayers.MaxBy(x => x.Elo)!;
+        var bestKd = awardPlayers.MaxBy(x => x.Kd)!;
+        var bestWinRate = awardPlayers.MaxBy(x => x.WinRate)!;
+        var aimKing = awardPlayers.MaxBy(x => x.HeadshotPercentage)!;
+        var fragMachine = awardPlayers.MaxBy(x => x.AverageKills)!;
+        var damageDealer = awardPlayers.MaxBy(x => x.Adr)!;
+        var lowestAdr = awardPlayers.MinBy(x => x.Adr)!;
+        var mvpFarmer = awardPlayers.MaxBy(x => x.AverageMvps)!;
+        var walkingDonation = awardPlayers.MinBy(x => x.Kd)!;
+        var lowestHs = awardPlayers.MinBy(x => x.HeadshotPercentage)!;
+        var lowestMvps = awardPlayers.MinBy(x => x.AverageMvps)!;
+        var lowestWinRate = awardPlayers.MinBy(x => x.WinRate)!;
+        var lowestElo = awardPlayers.MinBy(x => x.Elo)!;
 
-        players
+        var hottest = awardPlayers
+            .Where(x => x.Streak >= 2)
+            .OrderByDescending(x => x.Streak)
+            .FirstOrDefault();
 
-            .Where(
-
-                x => x.Matches > 0)
-
+        var playersWithHistory = awardPlayers
+            .Where(x => x.EloDelta7Days.HasValue)
             .ToList();
 
-
-
-    var awardPlayers =
-
-        performancePlayers.Count > 0
-
-            ? performancePlayers
-
-            : players.ToList();
-
-
-
-    var eloKing =
-
-        players.MaxBy(
-
-            x => x.Elo)!;
-
-
-
-    var bestKd =
-
-        awardPlayers.MaxBy(
-
-            x => x.Kd)!;
-
-
-
-    var bestWinRate =
-
-        awardPlayers.MaxBy(
-
-            x => x.WinRate)!;
-
-
-
-    var aimKing =
-
-        awardPlayers.MaxBy(
-
-            x => x.HeadshotPercentage)!;
-
-
-
-    var fragMachine =
-
-        awardPlayers.MaxBy(
-
-            x => x.AverageKills)!;
-
-
-
-    var damageDealer =
-
-        awardPlayers.MaxBy(
-
-            x => x.Adr)!;
-
-
-
-    var lowestAdr =
-
-        awardPlayers.MinBy(
-
-            x => x.Adr)!;
-
-
-
-    var mvpFarmer =
-
-        awardPlayers.MaxBy(
-
-            x => x.TotalMvps)!;
-
-
-
-    var walkingDonation =
-
-        awardPlayers.MinBy(
-
-            x => x.Kd)!;
-
-
-
-    var lowestHs =
-
-        awardPlayers.MinBy(
-
-            x => x.HeadshotPercentage)!;
-
-
-
-    var lowestMvps =
-
-        awardPlayers.MinBy(
-
-            x => x.TotalMvps)!;
-
-
-
-    var lowestWinRate =
-
-        awardPlayers.MinBy(
-
-            x => x.WinRate)!;
-
-
-
-    var lowestElo =
-
-        players.MinBy(
-
-            x => x.Elo)!;
-
-
-
-    var hottest =
-
-        awardPlayers
-
-            .Where(
-
-                x => x.Streak >= 2)
-
-            .OrderByDescending(
-
-                x => x.Streak)
-
+        var stonks = playersWithHistory
+            .OrderByDescending(x => x.EloDelta7Days)
             .FirstOrDefault();
 
-
-
-    var playersWithHistory =
-
-        players
-
-            .Where(
-
-                x => x.EloDelta7Days.HasValue)
-
-            .ToList();
-
-
-
-    var stonks =
-
-        playersWithHistory
-
-            .OrderByDescending(
-
-                x => x.EloDelta7Days)
-
+        var eloDonator = playersWithHistory
+            .OrderBy(x => x.EloDelta7Days)
             .FirstOrDefault();
 
-
-
-    var eloDonator =
-
-        playersWithHistory
-
-            .OrderBy(
-
-                x => x.EloDelta7Days)
-
-            .FirstOrDefault();
-
-
-
-    var mostActive =
-
-        players
-
-            .OrderByDescending(
-
-                x => x.ActivityMatches)
-
+        var mostActive = awardPlayers
+            .OrderByDescending(x => x.ActivityMatches)
             .First();
 
-
-
-    var leastActive =
-
-        players
-
-            .OrderBy(
-
-                x => x.ActivityMatches)
-
+        var leastActive = awardPlayers
+            .OrderBy(x => x.ActivityMatches)
             .First();
 
-
-
-    AppendAward(
-
-        sb,
-
-        "👑",
-
-        "ELO-KUNGEN",
-
-        $"{eloKing.Name} — {eloKing.Elo} ELO");
-
-
-
-    AppendAward(
-
-        sb,
-
-        "⚔️",
-
-        "K/D-DEMONEN",
-
-        $"{bestKd.Name} — {bestKd.Kd:0.00} K/D");
-
-
-
-    AppendAward(
-
-        sb,
-
-        "📈",
-
-        "VINSTMASKINEN",
-
-        $"{bestWinRate.Name} — " +
-
-        $"{bestWinRate.WinRate:0}% vinst");
-
-
-
-    AppendAward(
-
-        sb,
-
-        "🎯",
-
-        "AIM-KUNGEN",
-
-        $"{aimKing.Name} — " +
-
-        $"{aimKing.HeadshotPercentage:0}% HS");
-
-
-
-    AppendAward(
-
-        sb,
-
-        "💣",
-
-        "FRAGMASKINEN",
-
-        $"{fragMachine.Name} — " +
-
-        $"{fragMachine.AverageKills:0.0} kills/match");
-
-
-
-    AppendAward(
-
-        sb,
-
-        "💥",
-
-        "SKADEMASKINEN",
-
-        $"{damageDealer.Name} — " +
-
-        $"{damageDealer.Adr:0.0} ADR");
-
-
-
-    AppendAward(
-
-        sb,
-
-        "⭐",
-
-        "MVP-BONDEN",
-
-        $"{mvpFarmer.Name} — " +
-
-        $"{mvpFarmer.TotalMvps} MVP");
-
-
-
-    if (stonks is not null &&
-
-        stonks.EloDelta7Days > 0)
-
-    {
+        AppendAward(
+            sb,
+            "👑",
+            "ELO-KUNGEN",
+            $"{EscapeDiscordMarkdown(eloKing.Name)} — {eloKing.Elo} ELO");
 
         AppendAward(
-
             sb,
-
-            "🚀",
-
-            "STONKS",
-
-            $"{stonks.Name} — " +
-
-            $"+{stonks.EloDelta7Days} ELO");
-
-    }
-
-
-
-    if (eloDonator is not null &&
-
-        eloDonator.EloDelta7Days < 0)
-
-    {
+            "⚔️",
+            "K/D-DEMONEN",
+            $"{EscapeDiscordMarkdown(bestKd.Name)} — {bestKd.Kd:0.00} K/D");
 
         AppendAward(
-
             sb,
-
-            "📉",
-
-            "ELO-DONATORN",
-
-            $"{eloDonator.Name} — " +
-
-            $"{eloDonator.EloDelta7Days} ELO");
-
-    }
-
-
-
-    if (hottest is not null)
-
-    {
+            "📈",
+            "VINSTMASKINEN",
+            $"{EscapeDiscordMarkdown(bestWinRate.Name)} — {bestWinRate.WinRate:0}% vinst");
 
         AppendAward(
-
             sb,
+            "🎯",
+            "AIM-KUNGEN",
+            $"{EscapeDiscordMarkdown(aimKing.Name)} — {aimKing.HeadshotPercentage:0}% HS");
 
-            "🔥",
+        AppendAward(
+            sb,
+            "💣",
+            "FRAGMASKINEN",
+            $"{EscapeDiscordMarkdown(fragMachine.Name)} — {fragMachine.AverageKills:0.0} kills/match");
 
-            "GLÖDHET",
+        AppendAward(
+            sb,
+            "💥",
+            "SKADEMASKINEN",
+            $"{EscapeDiscordMarkdown(damageDealer.Name)} — {damageDealer.Adr:0.0} ADR");
 
-            $"{hottest.Name} — " +
+        AppendAward(
+            sb,
+            "⭐",
+            "MVP-BONDEN",
+            $"{EscapeDiscordMarkdown(mvpFarmer.Name)} — {mvpFarmer.AverageMvps:0.00} MVP/match");
 
-            $"{hottest.Streak} raka vinster");
+        if (stonks is not null && stonks.EloDelta7Days > 0)
+        {
+            AppendAward(
+                sb,
+                "🚀",
+                "STONKS",
+                $"{EscapeDiscordMarkdown(stonks.Name)} — +{stonks.EloDelta7Days} ELO");
+        }
 
+        if (eloDonator is not null && eloDonator.EloDelta7Days < 0)
+        {
+            AppendAward(
+                sb,
+                "📉",
+                "ELO-DONATORN",
+                $"{EscapeDiscordMarkdown(eloDonator.Name)} — {eloDonator.EloDelta7Days} ELO");
+        }
+
+        if (hottest is not null)
+        {
+            AppendAward(
+                sb,
+                "🔥",
+                "GLÖDHET",
+                $"{EscapeDiscordMarkdown(hottest.Name)} — {hottest.Streak} raka vinster");
+        }
+
+        AppendAward(
+            sb,
+            "🦟",
+            "MYGGBETTET",
+            $"{EscapeDiscordMarkdown(lowestAdr.Name)} — {lowestAdr.Adr:0.0} ADR");
+
+        AppendAward(
+            sb,
+            "🙈",
+            "SIKTESFÖRBUD",
+            $"{EscapeDiscordMarkdown(lowestHs.Name)} — {lowestHs.HeadshotPercentage:0}% HS");
+
+        AppendAward(
+            sb,
+            "😴",
+            "MVP-ALLERGI",
+            $"{EscapeDiscordMarkdown(lowestMvps.Name)} — {lowestMvps.AverageMvps:0.00} MVP/match");
+
+        AppendAward(
+            sb,
+            "🚨",
+            "FORMKRIS",
+            $"{EscapeDiscordMarkdown(lowestWinRate.Name)} — {lowestWinRate.WinRate:0}% vinst");
+
+        AppendAward(
+            sb,
+            "🚓",
+            "UNDER UTREDNING",
+            $"{EscapeDiscordMarkdown(lowestElo.Name)} — {lowestElo.Elo} ELO");
+
+        AppendAward(
+            sb,
+            "🎮",
+            "ARBETSLÖSA KRIGAREN",
+            $"{EscapeDiscordMarkdown(mostActive.Name)} — " +
+            $"{mostActive.ActivityMatches} matcher senaste {activityDays} dagarna");
+
+        AppendAward(
+            sb,
+            "🛋️",
+            "SOFFGENERALEN",
+            $"{EscapeDiscordMarkdown(leastActive.Name)} — " +
+            $"{leastActive.ActivityMatches} matcher senaste {activityDays} dagarna");
     }
-
-
-
-    AppendAward(
-
-        sb,
-
-        "🦟",
-
-        "MYGGBETTET",
-
-        $"{lowestAdr.Name} — " +
-
-        $"{lowestAdr.Adr:0.0} ADR");
-
-
-
-
-    AppendAward(
-
-        sb,
-
-        "🙈",
-
-        "SIKTESFÖRBUD",
-
-        $"{lowestHs.Name} — " +
-
-        $"{lowestHs.HeadshotPercentage:0}% HS");
-
-
-
-    AppendAward(
-
-        sb,
-
-        "😴",
-
-        "MVP-ALLERGI",
-
-        $"{lowestMvps.Name} — " +
-
-        $"{lowestMvps.TotalMvps} MVP");
-
-
-
-    AppendAward(
-
-        sb,
-
-        "🚨",
-
-        "FORMKRIS",
-
-        $"{lowestWinRate.Name} — " +
-
-        $"{lowestWinRate.WinRate:0}% vinst");
-
-
-
-    AppendAward(
-
-        sb,
-
-        "🚓",
-
-        "UNDER UTREDNING",
-
-        $"{lowestElo.Name} — " +
-
-        $"{lowestElo.Elo} ELO");
-
-
-
-    AppendAward(
-
-        sb,
-
-        "🎮",
-
-        "ARBETSLÖSA KRIGAREN",
-
-        $"{mostActive.Name} — " +
-
-        $"{mostActive.ActivityMatches} matcher senaste {activityDays} dagarna");
-
-
-
-    AppendAward(
-
-        sb,
-
-        "🛋️",
-
-        "SOFFGENERALEN",
-
-        $"{leastActive.Name} — " +
-
-        $"{leastActive.ActivityMatches} matcher senaste {activityDays} dagarna");
-
-
 
     sb.AppendLine(
-
         $"*Prestationsstatistik baserad på gruppmatcher bland de senaste " +
-
         $"{rankingWindow} FACEIT-matcherna. Minst {minimumGroupMatches} " +
-
-        "gruppmatcher krävs för att visas och kunna få en utmärkelse.*");
-
-
+        $"gruppmatcher krävs för att visas och minst {minimumGroupMatchesForAwards} " +
+        "krävs för att kunna få en utmärkelse.*");
 
     sb.AppendLine(
-
         $"*Aktivitet baserad på matcher de senaste {activityDays} dagarna.*");
 
-
-
-    if (excludedPlayers.Count > 0)
-
+    if (awardIneligiblePlayers.Count > 0)
     {
-
         sb.AppendLine();
-
-
-
         sb.AppendLine(
-
-            $"🚫 **Ej kvalificerade:** {FormatExcludedPlayers(excludedPlayers, rankingWindow)}");
-
+            $"🏅 **Visas men ej kvalificerade för utmärkelser:** " +
+            $"{FormatExcludedPlayers(awardIneligiblePlayers, rankingWindow)}");
     }
 
-
+    if (excludedPlayers.Count > 0)
+    {
+        sb.AppendLine();
+        sb.AppendLine(
+            $"🚫 **Ej kvalificerade för Power Ranking:** " +
+            $"{FormatExcludedPlayers(excludedPlayers, rankingWindow)}");
+    }
 
     sb.AppendLine();
-
-
-
     sb.AppendLine(
-
-        $"🕐 Uppdaterad " +
-
-        $"<t:{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}:R>");
-
-
+        $"🕐 Uppdaterad <t:{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}:R>");
 
     return sb.ToString();
-
 }
 
 
+static string EscapeDiscordMarkdown(string value)
+{
+    if (string.IsNullOrEmpty(value))
+        return value;
 
+    return value
+        .Replace("\\", "\\\\", StringComparison.Ordinal)
+        .Replace("*", "\\*", StringComparison.Ordinal)
+        .Replace("_", "\\_", StringComparison.Ordinal)
+        .Replace("~", "\\~", StringComparison.Ordinal)
+        .Replace("`", "\\`", StringComparison.Ordinal)
+        .Replace("|", "\\|", StringComparison.Ordinal);
+}
 
 
 // --------------------------------------------------
@@ -2485,6 +2127,10 @@ internal sealed class CalculatedStats
 
 
 
+    public double AverageMvps { get; init; }
+
+
+
     public double WinRate { get; init; }
 
 
@@ -2588,6 +2234,10 @@ internal sealed class PlayerLeaderboardEntry
 
 
     public int TotalMvps { get; init; }
+
+
+
+    public double AverageMvps { get; init; }
 
 
 
