@@ -1688,60 +1688,53 @@ static string BuildRanking(
             _ => "🔹"
         };
 
-        sb.AppendLine($"{medal} **{displayName}**");
         sb.AppendLine(
-            $"> LVL **{player.Level}** • " +
-            $"**{player.Elo} ELO** " +
+            $"{medal} **{displayName}** • " +
+            $"LVL {player.Level} • **{player.Elo} ELO**" +
             $"{FormatEloDelta(player.EloDelta7Days)}");
 
         sb.AppendLine(
             $"> 📊 {player.Wins}V-{player.Losses}F ({player.Matches}) • " +
-            $"**{player.WinRate:0}%** • " +
-            $"⚔️ {player.Kd:0.00} K/D • " +
-            $"💥 {player.Adr:0.0} ADR • " +
-            $"🎯 {player.HeadshotPercentage:0}% HS" +
+            $"{player.WinRate:0}% • " +
+            $"⚔️{player.Kd:0.00} • " +
+            $"💥{player.Adr:0.0} • " +
+            $"🎯{player.HeadshotPercentage:0}%" +
             $"{FormatStreak(player.Streak)}");
 
         if (player.AdvancedMatches > 0)
         {
             sb.AppendLine(
-                $"> 🚪 {player.EntryKillsPerMatch:0.00}/m • " +
-                $"⚡ {player.EntryAttemptsPerMatch:0.00}/m • " +
-                $"✅ {player.EntrySuccessPercentage:0}% • " +
-                $"🧠 {FormatClutch(player)} • " +
-                $"💣 {player.UtilityDamagePerRound:0.0}/r • " +
+                $"> 🚪{player.EntryKillsPerMatch:0.0}/m • " +
+                $"⚡{player.EntryAttemptsPerMatch:0.0}/m • " +
+                $"✅{player.EntrySuccessPercentage:0}% • " +
+                $"🧠{FormatClutch(player)} • " +
                 $"{FormatPlayStyle(player)}" +
                 $"{FormatAdvancedCoverage(player)}");
         }
         else
         {
             sb.AppendLine(
-                "> 🧠 Avancerad statistik saknas för gruppmatcherna.");
+                "> 🧠 Adv. stats saknas.");
         }
 
         sb.AppendLine();
     }
 
     sb.AppendLine(
-        "*🚪 entry kills/m • ⚡ entrydueller/m • ✅ vunna • 🧠 clutch • 💣 util dmg/r*");
+        "*📊 V-F (gruppmatcher) • ⚔️ K/D • 💥 ADR • 🎯 HS*");
 
     sb.AppendLine(
-        "*🦍🔥⚖️🐢🐔 spelstil — låg siffra = först in, hög siffra = mer bakåt.*");
+        "*🚪 entry kills/m • ⚡ entrydueller/m • ✅ vunna • 🧠 clutch • 🦍→🐔 spelstil*");
 
     sb.AppendLine(
-        $"*Minst {minimumGroupMatches} gruppmatcher av senaste {rankingWindow} krävs.*");
+        $"*Spelstil: låg siffra = först in, hög = mer bakåt. Minst {minimumGroupMatches}/{rankingWindow} gruppmatcher.*");
 
     if (excludedPlayers.Count > 0)
     {
-        sb.AppendLine();
         sb.AppendLine(
-            $"🚫 **Ej med i rankingen:** " +
-            $"{FormatExcludedPlayers(excludedPlayers, rankingWindow)}");
+            $"🚫 **Ej med:** {FormatExcludedPlayers(excludedPlayers, rankingWindow)} " +
+            $"— minst {minimumGroupMatches} gruppmatcher krävs.");
     }
-
-    sb.AppendLine();
-    sb.AppendLine(
-        $"🕐 Uppdaterad <t:{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}:R>");
 
     return sb.ToString();
 }
@@ -2041,8 +2034,9 @@ static string BuildAwards(
     {
         sb.AppendLine();
         sb.AppendLine(
-            $"🚫 **Ej med:** " +
-            $"{FormatExcludedPlayers(awardIneligiblePlayers, rankingWindow)}");
+            $"🚫 **Ej med i utmärkelser:** " +
+            $"{FormatExcludedPlayers(awardIneligiblePlayers, rankingWindow)} " +
+            $"— minst {minimumGroupMatchesForAwards} gruppmatcher krävs.");
     }
 
     sb.AppendLine();
@@ -2481,47 +2475,16 @@ static string FormatEloDelta(
     int? delta)
 
 {
-
     if (delta is null)
-
-    {
-
-        return
-
-            "• 🆕 spårning startad";
-
-    }
-
-
+        return "";
 
     if (delta > 0)
-
-    {
-
-        return
-
-            $"• 📈 **+{delta}** på 7 dagar";
-
-    }
-
-
+        return $" • 📈+{delta}/7d";
 
     if (delta < 0)
+        return $" • 📉{delta}/7d";
 
-    {
-
-        return
-
-            $"• 📉 **{delta}** på 7 dagar";
-
-    }
-
-
-
-    return
-
-        "• ➖ **0** på 7 dagar";
-
+    return " • ➖0/7d";
 }
 
 

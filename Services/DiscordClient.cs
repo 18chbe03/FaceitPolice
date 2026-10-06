@@ -485,7 +485,7 @@ public sealed class DiscordClient
         string content)
     {
         const int maxDescriptionLength =
-            3900;
+            4050;
 
         var parts =
             SplitText(
