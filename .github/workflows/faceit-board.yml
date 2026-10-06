@@ -2,9 +2,7 @@ name: Uppdatera FACEIT-tavlan
 
 on:
   schedule:
-    # Varje timme, 17 minuter över.
-    - cron: "17 * * * *"
-
+    - cron: "3,13,23,33,43,53 * * * *"
   workflow_dispatch:
 
 permissions:
