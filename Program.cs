@@ -1623,13 +1623,9 @@ static string BuildLeaderboard(
             $"**{player.Elo} ELO** " +
             $"{FormatEloDelta(player.EloDelta7Days)}");
         sb.AppendLine(
-            $"> 📊 {player.Wins}V-{player.Losses}F " +
-            $"({player.Matches} gruppmatcher) • " +
-            $"**{player.WinRate:0}% vinst** • " +
+            $"> 📊 {player.Wins}V-{player.Losses}F ({player.Matches}) • " +
+            $"**{player.WinRate:0}%** • " +
             $"⚔️ {player.Kd:0.00} K/D • " +
-            $"🔫 {player.Kr:0.00} K/R");
-        sb.AppendLine(
-            $"> 💣 {player.AverageKills:0.0} AVG • " +
             $"💥 {player.Adr:0.0} ADR • " +
             $"🎯 {player.HeadshotPercentage:0}% HS" +
             $"{FormatStreak(player.Streak)}");
@@ -1637,14 +1633,12 @@ static string BuildLeaderboard(
         if (player.AdvancedMatches > 0)
         {
             sb.AppendLine(
-                $"> 🚪 {player.EntryKillsPerMatch:0.00} entry kills/m • " +
-                $"⚡ {player.EntryAttemptsPerMatch:0.00} entrydueller/m • " +
-                $"✅ {player.EntrySuccessPercentage:0}% vunna");
-
-            sb.AppendLine(
-                $"> 🧠 {FormatClutch(player)} • " +
-                $"💣 {player.UtilityDamagePerRound:0.0} util dmg/r • " +
-                $"💡 {player.EnemiesFlashedPerRound:0.00} flashed/r • " +
+                $"> 🚪 {player.EntryKillsPerMatch:0.00}/m • " +
+                $"⚡ {player.EntryAttemptsPerMatch:0.00}/m • " +
+                $"✅ {player.EntrySuccessPercentage:0}% • " +
+                $"🧠 {FormatClutch(player)} • " +
+                $"💣 {player.UtilityDamagePerRound:0.0}/r • " +
+                $"💡 {player.EnemiesFlashedPerRound:0.00}/r • " +
                 $"{FormatPlayStyle(player)}" +
                 $"{FormatAdvancedCoverage(player)}");
         }
@@ -1940,22 +1934,16 @@ static string BuildLeaderboard(
     }
 
     sb.AppendLine(
-        $"*Prestationsstatistik baserad på gruppmatcher bland de senaste " +
-        $"{rankingWindow} FACEIT-matcherna. Minst {minimumGroupMatches} " +
-        $"gruppmatcher krävs för att visas och minst {minimumGroupMatchesForAwards} " +
-        "krävs för att kunna få en utmärkelse.*");
+        $"*Senaste {rankingWindow} FACEIT-matcherna • minst {minimumGroupMatches} gruppmatcher " +
+        $"för ranking, {minimumGroupMatchesForAwards} för utmärkelser.*");
 
     sb.AppendLine(
-        $"*Aktivitet baserad på matcher de senaste {activityDays} dagarna.*");
+        $"*🚪 vunna entrydueller/m • ⚡ entrydueller/m • 💣 utility dmg/r • " +
+        $"💡 fiender flashade/r • aktivitet = senaste {activityDays} dagar.*");
 
     sb.AppendLine(
-        "*Advanced-statistik hämtas från FACEIT:s matchstatistik för samma gruppmatcher. " +
-        "Entry kills = vunna opening/entry-dueller. Clutch% kombinerar 1v1 och 1v2.*");
-
-    sb.AppendLine(
-        "*🐔 Feghetsindex är Faceit Police egen skämtmetric, relativ inom gruppen. " +
-        "Den baseras på hur ofta spelaren tar entrydueller, inte på om duellerna vinns. " +
-        "Högre värde = mer avvaktande spelstil.*");
+        "*Spelstil: 🦍/🔥 aggressiv → ⚖️ balanserad → 🐢/🐔 avvaktande. " +
+        "Siffran är Faceit Police feghetsindex: 0 = först in, 100 = bakrad.*");
 
     if (awardIneligiblePlayers.Count > 0)
     {
@@ -2044,10 +2032,9 @@ static string FormatClutch(
     PlayerLeaderboardEntry player)
 {
     if (!player.ClutchWinPercentage.HasValue)
-        return "clutch –";
+        return "–";
 
-    return $"{player.ClutchWinPercentage.Value:0}% clutch " +
-           $"({player.ClutchAttempts} försök)";
+    return $"{player.ClutchWinPercentage.Value:0}%";
 }
 
 
@@ -2065,22 +2052,22 @@ static string FormatPlayStyle(
     PlayerLeaderboardEntry player)
 {
     if (!player.CowardiceIndex.HasValue)
-        return "🐔 –";
+        return "🐔–";
 
     var index =
         player.CowardiceIndex.Value;
 
-    var label =
+    var emoji =
         index switch
         {
-            <= 25 => "🦍 FRONTLINJE",
-            <= 45 => "🔥 AGGRESSIV",
-            <= 65 => "⚖️ BALANSERAD",
-            <= 80 => "🐢 AVVAKTANDE",
-            _ => "🐔 BAKRADSOPERATÖR"
+            <= 25 => "🦍",
+            <= 45 => "🔥",
+            <= 65 => "⚖️",
+            <= 80 => "🐢",
+            _ => "🐔"
         };
 
-    return $"{label} {index}/100";
+    return $"{emoji}{index}";
 }
 
 
