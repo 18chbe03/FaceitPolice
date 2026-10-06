@@ -88,6 +88,14 @@ var configuredMapStatsMessageId =
 
 
 
+var configuredAwardsMessageId =
+
+    Environment.GetEnvironmentVariable(
+
+        "AWARDS_MESSAGE_ID");
+
+
+
 var playersConfig =
 
     Environment.GetEnvironmentVariable(
@@ -200,6 +208,10 @@ var boardMessageId =
 var mapStatsMessageId =
     configuredMapStatsMessageId
     ?? discordState.MapStatsMessageId;
+
+var awardsMessageId =
+    configuredAwardsMessageId
+    ?? discordState.AwardsMessageId;
 
 var tiltWatchMessageId =
     configuredTiltWatchMessageId
@@ -998,15 +1010,25 @@ var leaderboardMessage =
 
         orderedPlayers,
 
-        ActivityDays,
-
         MinimumGroupMatchesForRanking,
-
-        MinimumGroupMatchesForAwards,
 
         PlayerStatsMatchLimit,
 
         excludedPlayers);
+
+
+
+var awardsMessage =
+
+    BuildAwardsMessage(
+
+        orderedPlayers,
+
+        ActivityDays,
+
+        MinimumGroupMatchesForAwards,
+
+        PlayerStatsMatchLimit);
 
 
 
@@ -1027,6 +1049,40 @@ var returnedBoardMessageId =
 discordState.BoardMessageId =
 
     returnedBoardMessageId;
+
+
+
+await discordStateService.SaveAsync(
+
+    discordState);
+
+
+
+// --------------------------------------------------
+
+// GRISARNAS UTMÄRKELSER
+
+// --------------------------------------------------
+
+
+
+var returnedAwardsMessageId =
+
+    await discordClient.PublishAwardsAsync(
+
+        content:
+
+            awardsMessage,
+
+        messageId:
+
+            awardsMessageId);
+
+
+
+discordState.AwardsMessageId =
+
+    returnedAwardsMessageId;
 
 
 
@@ -1169,6 +1225,12 @@ Console.WriteLine();
 Console.WriteLine(
 
     $"Board ID: {returnedBoardMessageId}");
+
+
+
+Console.WriteLine(
+
+    $"Awards ID: {returnedAwardsMessageId}");
 
 
 
@@ -1576,9 +1638,7 @@ static int CalculateStreak(
 
 static string BuildLeaderboard(
     IReadOnlyList<PlayerLeaderboardEntry> players,
-    int activityDays,
     int minimumGroupMatches,
-    int minimumGroupMatchesForAwards,
     int rankingWindow,
     IReadOnlyList<PlayerLeaderboardEntry> excludedPlayers)
 {
@@ -1587,17 +1647,18 @@ static string BuildLeaderboard(
     if (players.Count == 0)
     {
         sb.AppendLine(
-            $"Ingen spelare har minst {minimumGroupMatches} gruppmatcher " +
+            $"Ingen har minst {minimumGroupMatches} gruppmatcher " +
             $"bland sina senaste {rankingWindow} FACEIT-matcher.");
 
         if (excludedPlayers.Count > 0)
         {
-            sb.AppendLine(
-                $"🚫 **Ej kvalificerade för GRIS Ranking:** " +
-                $"{FormatExcludedPlayers(excludedPlayers, rankingWindow)}");
             sb.AppendLine();
+            sb.AppendLine(
+                $"🚫 **Ej med:** " +
+                $"{FormatExcludedPlayers(excludedPlayers, rankingWindow)}");
         }
 
+        sb.AppendLine();
         sb.AppendLine(
             $"🕐 Uppdaterad <t:{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}:R>");
 
@@ -1644,16 +1705,45 @@ static string BuildLeaderboard(
         }
         else
         {
-            sb.AppendLine(
-                "> 🧠 Advanced GRIS-statistik saknas för gruppmatcherna.");
+            sb.AppendLine("> 🧠 Advanced-data saknas.");
         }
 
         sb.AppendLine();
     }
 
-    sb.AppendLine("━━━━━━━━━━━━━━━━━━");
-    sb.AppendLine("### 🏅 GRISARNAS UTMÄRKELSER");
+    sb.AppendLine(
+        $"*Senaste {rankingWindow} FACEIT-matcherna • minst {minimumGroupMatches} gruppmatcher.*");
+
+    sb.AppendLine(
+        "*🚪 entry kills/m • ⚡ entrydueller/m • 🧠 clutch • 💣 util/r • 💡 flashade/r.*");
+
+    sb.AppendLine(
+        "*Spelstil: 🦍 offensiv → ⚖️ balanserad → 🐔 avvaktande. " +
+        "Indexet bygger på entry rate; 50 ≈ normalnivå.*");
+
+    if (excludedPlayers.Count > 0)
+    {
+        sb.AppendLine();
+        sb.AppendLine(
+            $"🚫 **Ej med:** " +
+            $"{FormatExcludedPlayers(excludedPlayers, rankingWindow)}");
+    }
+
     sb.AppendLine();
+    sb.AppendLine(
+        $"🕐 Uppdaterad <t:{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}:R>");
+
+    return sb.ToString();
+}
+
+
+static string BuildAwardsMessage(
+    IReadOnlyList<PlayerLeaderboardEntry> players,
+    int activityDays,
+    int minimumGroupMatchesForAwards,
+    int rankingWindow)
+{
+    var sb = new StringBuilder();
 
     var awardPlayers = players
         .Where(x => x.Matches >= minimumGroupMatchesForAwards)
@@ -1666,9 +1756,7 @@ static string BuildLeaderboard(
     if (awardPlayers.Count == 0)
     {
         sb.AppendLine(
-            $"*Ingen spelare har minst {minimumGroupMatchesForAwards} gruppmatcher, " +
-            "så inga utmärkelser delas ut ännu.*");
-        sb.AppendLine();
+            $"Ingen har minst {minimumGroupMatchesForAwards} gruppmatcher ännu.");
     }
     else
     {
@@ -1928,37 +2016,19 @@ static string BuildLeaderboard(
                     "🐔",
                     "BAKRADSOPERATÖREN",
                     $"{EscapeDiscordMarkdown(backlineOperator.Name)} — " +
-                    $"{backlineOperator.CowardiceIndex}/100 feghetsindex");
+                    $"{backlineOperator.CowardiceIndex}/100");
             }
         }
     }
 
     sb.AppendLine(
-        $"*Senaste {rankingWindow} FACEIT-matcherna • minst {minimumGroupMatches} gruppmatcher " +
-        $"för ranking, {minimumGroupMatchesForAwards} för utmärkelser.*");
-
-    sb.AppendLine(
-        $"*🚪 vunna entrydueller/m • ⚡ entrydueller/m • 💣 utility dmg/r • " +
-        $"💡 fiender flashade/r • aktivitet = senaste {activityDays} dagar.*");
-
-    sb.AppendLine(
-        "*Spelstil: 🦍/🔥 aggressiv → ⚖️ balanserad → 🐢/🐔 avvaktande. " +
-        "Siffran är Faceit Police feghetsindex: 0 = först in, 100 = bakrad.*");
+        $"*Minst {minimumGroupMatchesForAwards} gruppmatcher av senaste {rankingWindow} för utmärkelser.*");
 
     if (awardIneligiblePlayers.Count > 0)
     {
-        sb.AppendLine();
         sb.AppendLine(
-            $"🏅 **Visas men ej kvalificerade för utmärkelser:** " +
+            $"🚫 **Ej med:** " +
             $"{FormatExcludedPlayers(awardIneligiblePlayers, rankingWindow)}");
-    }
-
-    if (excludedPlayers.Count > 0)
-    {
-        sb.AppendLine();
-        sb.AppendLine(
-            $"🚫 **Ej kvalificerade för Power Ranking:** " +
-            $"{FormatExcludedPlayers(excludedPlayers, rankingWindow)}");
     }
 
     sb.AppendLine();
@@ -1972,59 +2042,19 @@ static string BuildLeaderboard(
 static void CalculateCowardiceIndexes(
     IReadOnlyList<PlayerLeaderboardEntry> players)
 {
-    if (players.Count == 0)
-        return;
-
-    var minEntryRate =
-        players.Min(x => x.EntryRatePercentage);
-
-    var maxEntryRate =
-        players.Max(x => x.EntryRatePercentage);
-
-    var minEntryAttempts =
-        players.Min(x => x.EntryAttemptsPerMatch);
-
-    var maxEntryAttempts =
-        players.Max(x => x.EntryAttemptsPerMatch);
-
     foreach (var player in players)
     {
-        var normalizedEntryRate =
-            NormalizeRelative(
-                player.EntryRatePercentage,
-                minEntryRate,
-                maxEntryRate);
-
-        var normalizedEntryAttempts =
-            NormalizeRelative(
-                player.EntryAttemptsPerMatch,
-                minEntryAttempts,
-                maxEntryAttempts);
-
-        var aggressionScore =
-            normalizedEntryRate * 0.70 +
-            normalizedEntryAttempts * 0.30;
+        // Fast skala i stället för relativ ranking inom gruppen.
+        // 20% entry rate = ungefär mittpunkten 50.
+        // 40%+ är mycket offensivt, nära 0% mycket avvaktande.
+        var rawIndex =
+            100 - player.EntryRatePercentage * 2.5;
 
         player.CowardiceIndex =
             (int)Math.Round(
-                (1 - aggressionScore) * 100,
+                Math.Clamp(rawIndex, 5, 95),
                 MidpointRounding.AwayFromZero);
     }
-}
-
-
-static double NormalizeRelative(
-    double value,
-    double minimum,
-    double maximum)
-{
-    if (Math.Abs(maximum - minimum) < 0.000001)
-        return 0.5;
-
-    return Math.Clamp(
-        (value - minimum) / (maximum - minimum),
-        0,
-        1);
 }
 
 

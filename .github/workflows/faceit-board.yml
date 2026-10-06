@@ -11,7 +11,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: faceit-police-main
+  group: cs-grisarna-main
   cancel-in-progress: false
 
 jobs:
@@ -39,6 +39,7 @@ jobs:
           FACEIT_API_KEY: ${{ secrets.FACEIT_API_KEY }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           DISCORD_MESSAGE_ID: ${{ vars.DISCORD_MESSAGE_ID }}
+          AWARDS_MESSAGE_ID: ${{ vars.AWARDS_MESSAGE_ID }}
           MAP_STATS_MESSAGE_ID: ${{ vars.MAP_STATS_MESSAGE_ID }}
           TILT_WATCH_MESSAGE_ID: ${{ vars.TILT_WATCH_MESSAGE_ID }}
           FACEIT_PLAYERS: ${{ vars.FACEIT_PLAYERS }}

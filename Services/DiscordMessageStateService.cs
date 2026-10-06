@@ -73,6 +73,8 @@ public sealed class DiscordMessageState
 {
     public string? BoardMessageId { get; set; }
 
+    public string? AwardsMessageId { get; set; }
+
     public string? MapStatsMessageId { get; set; }
 
     public string? TiltWatchMessageId { get; set; }
