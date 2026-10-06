@@ -1857,8 +1857,8 @@ static string BuildAdvancedStatistics(
                     $"> **PROFILE** 🎯 Aim {FormatOptionalAdvanced(player.ProfileAim, "0.0")} • " +
                     $"📍 Pos {FormatOptionalAdvanced(player.ProfilePositioning, "0.0")} • " +
                     $"💣 Util {FormatOptionalAdvanced(player.ProfileUtility, "0.0")} • " +
-                    $"🧠 Clutch {FormatSignedAdvanced(player.ProfileClutch)} • " +
-                    $"⚔️ Opening {FormatSignedAdvanced(player.ProfileOpening)}");
+                    $"🧠 Clutch {FormatOptionalSignedAdvanced(player.ProfileClutch)} • " +
+                    $"⚔️ Opening {FormatOptionalSignedAdvanced(player.ProfileOpening)}");
 
                 sb.AppendLine(
                     $"> ⚔️ Opening duels CT {FormatOptionalPercentageAdvanced(player.CtOpeningDuelSuccessPercentage)} / " +
@@ -1980,7 +1980,7 @@ static string BuildAdvancedStatistics(
                     "⚔️",
                     "DÖRRSPARKAREN",
                     $"{EscapeDiscordMarkdown(bestOpening.Name)} — " +
-                    $"{FormatSignedAdvanced(bestOpening.ProfileOpening)} Opening rating");
+                    $"{FormatOptionalSignedAdvanced(bestOpening.ProfileOpening)} Opening rating");
             }
 
             AppendAward(
@@ -2042,7 +2042,7 @@ static string FormatSignedAdvanced(double value)
 }
 
 
-static string FormatSignedAdvanced(double? value)
+static string FormatOptionalSignedAdvanced(double? value)
 {
     return value.HasValue
         ? FormatSignedAdvanced(value.Value)
