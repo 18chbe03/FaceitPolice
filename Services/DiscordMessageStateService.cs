@@ -71,9 +71,9 @@ public sealed class DiscordMessageStateService
 
 public sealed class DiscordMessageState
 {
-    public string? BoardMessageId { get; set; }
-
     public string? AwardsMessageId { get; set; }
+
+    public string? BoardMessageId { get; set; }
 
     public string? MapStatsMessageId { get; set; }
 

@@ -21,30 +21,6 @@ public sealed class DiscordClient
     }
 
     // --------------------------------------------------
-    // POWER RANKING
-    // --------------------------------------------------
-
-    public Task<string?> PublishBoardAsync(
-        string content,
-        string? messageId,
-        CancellationToken cancellationToken = default)
-    {
-        return PublishTextMessageAsync(
-            title:
-                "🐷 CS2 GRIS RANKING",
-            continuationTitle:
-                "🐷 CS2 GRIS RANKING — FORTSÄTTNING",
-            content:
-                content,
-            messageContent:
-                "",
-            messageId:
-                messageId,
-            cancellationToken:
-                cancellationToken);
-    }
-
-    // --------------------------------------------------
     // GRISARNAS UTMÄRKELSER
     // --------------------------------------------------
 
@@ -69,6 +45,30 @@ public sealed class DiscordClient
     }
 
     // --------------------------------------------------
+    // GRISARNAS RANKING
+    // --------------------------------------------------
+
+    public Task<string?> PublishBoardAsync(
+        string content,
+        string? messageId,
+        CancellationToken cancellationToken = default)
+    {
+        return PublishTextMessageAsync(
+            title:
+                "🐷 GRISARNAS RANKING",
+            continuationTitle:
+                "🐷 GRISARNAS RANKING — FORTSÄTTNING",
+            content:
+                content,
+            messageContent:
+                "",
+            messageId:
+                messageId,
+            cancellationToken:
+                cancellationToken);
+    }
+
+    // --------------------------------------------------
     // MAP ANALYTICS
     // --------------------------------------------------
 
@@ -79,9 +79,9 @@ public sealed class DiscordClient
     {
         return PublishTextMessageAsync(
             title:
-                "🗺️ MAP ANALYTICS",
+                "🗺️ KARTANALYS",
             continuationTitle:
-                "🗺️ MAP ANALYTICS — FORTSÄTTNING",
+                "🗺️ KARTANALYS — FORTSÄTTNING",
             content:
                 content,
             messageContent:

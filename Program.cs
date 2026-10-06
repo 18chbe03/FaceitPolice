@@ -201,6 +201,10 @@ var discordState =
 // Env vinner över state.
 // State används endast som fallback.
 
+var awardsMessageId =
+    configuredAwardsMessageId
+    ?? discordState.AwardsMessageId;
+
 var boardMessageId =
     configuredBoardMessageId
     ?? discordState.BoardMessageId;
@@ -208,10 +212,6 @@ var boardMessageId =
 var mapStatsMessageId =
     configuredMapStatsMessageId
     ?? discordState.MapStatsMessageId;
-
-var awardsMessageId =
-    configuredAwardsMessageId
-    ?? discordState.AwardsMessageId;
 
 var tiltWatchMessageId =
     configuredTiltWatchMessageId
@@ -885,7 +885,7 @@ foreach (var excludedPlayer in excludedPlayers)
 
     Console.WriteLine(
 
-        $"🚫 {excludedPlayer.Name}: filtreras bort från Power Ranking och utmärkelser " +
+        $"🚫 {excludedPlayer.Name}: filtreras bort från rankingen och utmärkelser " +
 
         $"({excludedPlayer.Matches}/{PlayerStatsMatchLimit} gruppmatcher, " +
 
@@ -1004,9 +1004,9 @@ var tiltWatchPlayer =
 
 
 
-var leaderboardMessage =
+var rankingMessage =
 
-    BuildLeaderboard(
+    BuildRanking(
 
         orderedPlayers,
 
@@ -1020,41 +1020,15 @@ var leaderboardMessage =
 
 var awardsMessage =
 
-    BuildAwardsMessage(
+    BuildAwards(
 
-        orderedPlayers,
+        allPlayers,
 
         ActivityDays,
 
         MinimumGroupMatchesForAwards,
 
         PlayerStatsMatchLimit);
-
-
-
-var returnedBoardMessageId =
-
-    await discordClient.PublishBoardAsync(
-
-        content:
-
-            leaderboardMessage,
-
-        messageId:
-
-            boardMessageId);
-
-
-
-discordState.BoardMessageId =
-
-    returnedBoardMessageId;
-
-
-
-await discordStateService.SaveAsync(
-
-    discordState);
 
 
 
@@ -1083,6 +1057,42 @@ var returnedAwardsMessageId =
 discordState.AwardsMessageId =
 
     returnedAwardsMessageId;
+
+
+
+await discordStateService.SaveAsync(
+
+    discordState);
+
+
+
+
+
+// --------------------------------------------------
+
+// GRISARNAS RANKING
+
+// --------------------------------------------------
+
+
+
+var returnedBoardMessageId =
+
+    await discordClient.PublishBoardAsync(
+
+        content:
+
+            rankingMessage,
+
+        messageId:
+
+            boardMessageId);
+
+
+
+discordState.BoardMessageId =
+
+    returnedBoardMessageId;
 
 
 
@@ -1168,7 +1178,7 @@ if (tiltWatchPlayer is not null)
 
             title:
 
-                "🧊 TILT WATCH",
+                "🧊 TILTÖVERVAKNING",
 
             description:
 
@@ -1224,13 +1234,13 @@ Console.WriteLine();
 
 Console.WriteLine(
 
-    $"Board ID: {returnedBoardMessageId}");
+    $"Awards ID: {returnedAwardsMessageId}");
 
 
 
 Console.WriteLine(
 
-    $"Awards ID: {returnedAwardsMessageId}");
+    $"Board ID: {returnedBoardMessageId}");
 
 
 
@@ -1636,7 +1646,7 @@ static int CalculateStreak(
 
 
 
-static string BuildLeaderboard(
+static string BuildRanking(
     IReadOnlyList<PlayerLeaderboardEntry> players,
     int minimumGroupMatches,
     int rankingWindow,
@@ -1647,14 +1657,14 @@ static string BuildLeaderboard(
     if (players.Count == 0)
     {
         sb.AppendLine(
-            $"Ingen har minst {minimumGroupMatches} gruppmatcher " +
+            $"Ingen spelare har minst {minimumGroupMatches} gruppmatcher " +
             $"bland sina senaste {rankingWindow} FACEIT-matcher.");
 
         if (excludedPlayers.Count > 0)
         {
             sb.AppendLine();
             sb.AppendLine(
-                $"🚫 **Ej med:** " +
+                $"🚫 **Ej med i rankingen:** " +
                 $"{FormatExcludedPlayers(excludedPlayers, rankingWindow)}");
         }
 
@@ -1683,6 +1693,7 @@ static string BuildLeaderboard(
             $"> LVL **{player.Level}** • " +
             $"**{player.Elo} ELO** " +
             $"{FormatEloDelta(player.EloDelta7Days)}");
+
         sb.AppendLine(
             $"> 📊 {player.Wins}V-{player.Losses}F ({player.Matches}) • " +
             $"**{player.WinRate:0}%** • " +
@@ -1699,33 +1710,32 @@ static string BuildLeaderboard(
                 $"✅ {player.EntrySuccessPercentage:0}% • " +
                 $"🧠 {FormatClutch(player)} • " +
                 $"💣 {player.UtilityDamagePerRound:0.0}/r • " +
-                $"💡 {player.EnemiesFlashedPerRound:0.00}/r • " +
                 $"{FormatPlayStyle(player)}" +
                 $"{FormatAdvancedCoverage(player)}");
         }
         else
         {
-            sb.AppendLine("> 🧠 Advanced-data saknas.");
+            sb.AppendLine(
+                "> 🧠 Avancerad statistik saknas för gruppmatcherna.");
         }
 
         sb.AppendLine();
     }
 
     sb.AppendLine(
-        $"*Senaste {rankingWindow} FACEIT-matcherna • minst {minimumGroupMatches} gruppmatcher.*");
+        "*🚪 entry kills/m • ⚡ entrydueller/m • ✅ vunna • 🧠 clutch • 💣 util dmg/r*");
 
     sb.AppendLine(
-        "*🚪 entry kills/m • ⚡ entrydueller/m • 🧠 clutch • 💣 util/r • 💡 flashade/r.*");
+        "*🦍🔥⚖️🐢🐔 spelstil — låg siffra = först in, hög siffra = mer bakåt.*");
 
     sb.AppendLine(
-        "*Spelstil: 🦍 offensiv → ⚖️ balanserad → 🐔 avvaktande. " +
-        "Indexet bygger på entry rate; 50 ≈ normalnivå.*");
+        $"*Minst {minimumGroupMatches} gruppmatcher av senaste {rankingWindow} krävs.*");
 
     if (excludedPlayers.Count > 0)
     {
         sb.AppendLine();
         sb.AppendLine(
-            $"🚫 **Ej med:** " +
+            $"🚫 **Ej med i rankingen:** " +
             $"{FormatExcludedPlayers(excludedPlayers, rankingWindow)}");
     }
 
@@ -1737,26 +1747,28 @@ static string BuildLeaderboard(
 }
 
 
-static string BuildAwardsMessage(
-    IReadOnlyList<PlayerLeaderboardEntry> players,
+static string BuildAwards(
+    IReadOnlyList<PlayerLeaderboardEntry> allPlayers,
     int activityDays,
     int minimumGroupMatchesForAwards,
     int rankingWindow)
 {
     var sb = new StringBuilder();
 
-    var awardPlayers = players
+    var awardPlayers = allPlayers
         .Where(x => x.Matches >= minimumGroupMatchesForAwards)
         .ToList();
 
-    var awardIneligiblePlayers = players
+    var awardIneligiblePlayers = allPlayers
         .Where(x => x.Matches < minimumGroupMatchesForAwards)
         .ToList();
 
     if (awardPlayers.Count == 0)
     {
         sb.AppendLine(
-            $"Ingen har minst {minimumGroupMatchesForAwards} gruppmatcher ännu.");
+            $"*Ingen spelare har minst {minimumGroupMatchesForAwards} gruppmatcher, " +
+            "så inga utmärkelser delas ut ännu.*");
+        sb.AppendLine();
     }
     else
     {
@@ -2016,16 +2028,18 @@ static string BuildAwardsMessage(
                     "🐔",
                     "BAKRADSOPERATÖREN",
                     $"{EscapeDiscordMarkdown(backlineOperator.Name)} — " +
-                    $"{backlineOperator.CowardiceIndex}/100");
+                    $"{backlineOperator.CowardiceIndex}/100 feghetsindex");
             }
         }
     }
+
 
     sb.AppendLine(
         $"*Minst {minimumGroupMatchesForAwards} gruppmatcher av senaste {rankingWindow} för utmärkelser.*");
 
     if (awardIneligiblePlayers.Count > 0)
     {
+        sb.AppendLine();
         sb.AppendLine(
             $"🚫 **Ej med:** " +
             $"{FormatExcludedPlayers(awardIneligiblePlayers, rankingWindow)}");
@@ -2039,23 +2053,57 @@ static string BuildAwardsMessage(
 }
 
 
+
 static void CalculateCowardiceIndexes(
     IReadOnlyList<PlayerLeaderboardEntry> players)
 {
     foreach (var player in players)
     {
-        // Fast skala i stället för relativ ranking inom gruppen.
-        // 20% entry rate = ungefär mittpunkten 50.
-        // 40%+ är mycket offensivt, nära 0% mycket avvaktande.
-        var rawIndex =
-            100 - player.EntryRatePercentage * 2.5;
+        // Fast skala i stället för att jämföra mot gruppens mest
+        // aggressiva/passiva spelare. Då blir 100 aldrig bara
+        // "mest passiv i just den här gruppen".
+        var entryRateAggression =
+            NormalizeAbsolute(
+                player.EntryRatePercentage,
+                passiveValue: 8,
+                aggressiveValue: 30);
+
+        var entryAttemptsAggression =
+            NormalizeAbsolute(
+                player.EntryAttemptsPerMatch,
+                passiveValue: 1.5,
+                aggressiveValue: 6.0);
+
+        var aggressionScore =
+            entryRateAggression * 0.75 +
+            entryAttemptsAggression * 0.25;
+
+        var index =
+            (int)Math.Round(
+                (1 - aggressionScore) * 100,
+                MidpointRounding.AwayFromZero);
 
         player.CowardiceIndex =
-            (int)Math.Round(
-                Math.Clamp(rawIndex, 5, 95),
-                MidpointRounding.AwayFromZero);
+            Math.Clamp(index, 5, 95);
     }
 }
+
+
+static double NormalizeAbsolute(
+    double value,
+    double passiveValue,
+    double aggressiveValue)
+{
+    if (aggressiveValue <= passiveValue)
+        return 0.5;
+
+    return Math.Clamp(
+        (value - passiveValue) /
+        (aggressiveValue - passiveValue),
+        0,
+        1);
+}
+
 
 
 static string FormatClutch(
