@@ -611,7 +611,7 @@ foreach (var fetchedPlayer in fetchedPlayers)
 
 // --------------------------------------------------
 
-// LEETIFY TEST - EN AV DE SENASTE GRUPPMATCHERNA
+// LEETIFY TEST - SENASTE GRUPPMATCHERNA
 
 // --------------------------------------------------
 
@@ -657,7 +657,7 @@ await leetifyClient.TryLogFirstAvailableFaceitMatchAsync(
 
     recentGroupMatchIds,
 
-    maxAttempts: 5);
+    maxMatches: 10);
 
 
 

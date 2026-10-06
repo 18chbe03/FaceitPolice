@@ -2,7 +2,7 @@ name: Uppdatera FACEIT-tavlan
 
 on:
   schedule:
-    # Kör varje timme, 7 minuter över.
+    # Kör varje timme, dygnet runt, 7 minuter över hel timme.
     - cron: "7 * * * *"
 
   workflow_dispatch:
@@ -10,7 +10,6 @@ on:
 permissions:
   contents: write
 
-# Förhindra att en manuell och en schemalagd körning skriver samtidigt.
 concurrency:
   group: faceit-police-main
   cancel-in-progress: false
@@ -38,15 +37,12 @@ jobs:
         run: dotnet run --configuration Release
         env:
           FACEIT_API_KEY: ${{ secrets.FACEIT_API_KEY }}
+          LEETIFY_API_KEY: ${{ secrets.LEETIFY_API_KEY }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-
           DISCORD_MESSAGE_ID: ${{ vars.DISCORD_MESSAGE_ID }}
           MAP_STATS_MESSAGE_ID: ${{ vars.MAP_STATS_MESSAGE_ID }}
           TILT_WATCH_MESSAGE_ID: ${{ vars.TILT_WATCH_MESSAGE_ID }}
-
           FACEIT_PLAYERS: ${{ vars.FACEIT_PLAYERS }}
-
-          LEETIFY_API_KEY: ${{ secrets.LEETIFY_API_KEY }}
 
       - name: Spara ELO-historik
         shell: bash
