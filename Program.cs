@@ -1158,7 +1158,7 @@ Console.WriteLine();
 
 Console.WriteLine(
 
-    "✅ FACEIT-tavlan är klar.");
+    "✅ GRIS-tavlan är klar.");
 
 
 
@@ -1593,7 +1593,7 @@ static string BuildLeaderboard(
         if (excludedPlayers.Count > 0)
         {
             sb.AppendLine(
-                $"🚫 **Ej kvalificerade för Power Ranking:** " +
+                $"🚫 **Ej kvalificerade för GRIS Ranking:** " +
                 $"{FormatExcludedPlayers(excludedPlayers, rankingWindow)}");
             sb.AppendLine();
         }
@@ -1645,14 +1645,14 @@ static string BuildLeaderboard(
         else
         {
             sb.AppendLine(
-                "> 🧠 Advanced FACEIT-statistik saknas för gruppmatcherna.");
+                "> 🧠 Advanced GRIS-statistik saknas för gruppmatcherna.");
         }
 
         sb.AppendLine();
     }
 
     sb.AppendLine("━━━━━━━━━━━━━━━━━━");
-    sb.AppendLine("### 🏅 GRUPPENS UTMÄRKELSER");
+    sb.AppendLine("### 🏅 GRISARNAS UTMÄRKELSER");
     sb.AppendLine();
 
     var awardPlayers = players
@@ -1766,7 +1766,7 @@ static string BuildLeaderboard(
             AppendAward(
                 sb,
                 "📉",
-                "ELO-DONATORN",
+                "ELO DONATORN",
                 $"{EscapeDiscordMarkdown(eloDonator.Name)} — {eloDonator.EloDelta7Days} ELO");
         }
 
@@ -1788,13 +1788,13 @@ static string BuildLeaderboard(
         AppendAward(
             sb,
             "🙈",
-            "SIKTESFÖRBUD",
+            "Låg HS%, hög sannolikhet för AWP missbruk",
             $"{EscapeDiscordMarkdown(lowestHs.Name)} — {lowestHs.HeadshotPercentage:0}% HS");
 
         AppendAward(
             sb,
             "😴",
-            "MVP-ALLERGI",
+            "MVP ALLERGI",
             $"{EscapeDiscordMarkdown(lowestMvps.Name)} — {lowestMvps.AverageMvps:0.00} MVP/match");
 
         AppendAward(
@@ -1875,7 +1875,7 @@ static string BuildLeaderboard(
             AppendAward(
                 sb,
                 "🦍",
-                "FÖRST IN",
+                "FÖRST IN SIST UT",
                 $"{EscapeDiscordMarkdown(firstIn.Name)} — " +
                 $"{firstIn.EntryAttemptsPerMatch:0.00} entrydueller/match");
 

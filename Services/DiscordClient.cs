@@ -35,9 +35,9 @@ public sealed class DiscordClient
 
         return PublishTextMessageAsync(
             title:
-                "🐷 CS2 POWER RANKING",
+                "🐷 CS2 GRIS RANKING",
             continuationTitle:
-                "🐷 CS2 POWER RANKING — FORTSÄTTNING",
+                "🐷 CS2 GRIS RANKING — FORTSÄTTNING",
             content:
                 sections.EmbedContent,
             messageContent:
