@@ -1,16 +1,17 @@
-name: Test Schedule
+name: Test scheduler
 
 on:
-  schedule:
-    - cron: '*/5 * * * *'
   workflow_dispatch:
+
+  schedule:
+    - cron: "*/5 * * * *"
 
 jobs:
   test:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Echo timestamp
+      - name: Test
         run: |
-          echo "Workflow triggered at UTC: $(date -u)"
-          echo "Workflow triggered at: $(date)"
-          echo "Scheduled run works!"
+          echo "Scheduler fungerar"
+          date
