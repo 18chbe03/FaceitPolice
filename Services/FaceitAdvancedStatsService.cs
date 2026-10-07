@@ -95,6 +95,8 @@ public sealed class FaceitAdvancedStatsService
                 result.TotalEntryAttempts += playerMatchStats.EntryAttempts;
                 result.TotalEntryWins += playerMatchStats.EntryWins;
                 result.TotalFirstKills += playerMatchStats.FirstKills;
+                result.TotalAssists += playerMatchStats.Assists;
+                result.TotalPistolKills += playerMatchStats.PistolKills;
                 result.TotalOneVsOneAttempts += playerMatchStats.OneVsOneAttempts;
                 result.TotalOneVsOneWins += playerMatchStats.OneVsOneWins;
                 result.TotalOneVsTwoAttempts += playerMatchStats.OneVsTwoAttempts;
@@ -222,6 +224,8 @@ public sealed class FaceitAdvancedStatsService
                         aggregate.EntryAttempts += GetInt(playerStats, "Entry Count");
                         aggregate.EntryWins += GetInt(playerStats, "Entry Wins");
                         aggregate.FirstKills += GetInt(playerStats, "First Kills");
+                        aggregate.Assists += GetInt(playerStats, "Assists");
+                        aggregate.PistolKills += GetInt(playerStats, "Pistol Kills");
                         aggregate.OneVsOneAttempts += GetInt(playerStats, "1v1Count");
                         aggregate.OneVsOneWins += GetInt(playerStats, "1v1Wins");
                         aggregate.OneVsTwoAttempts += GetInt(playerStats, "1v2Count");
@@ -357,6 +361,10 @@ public sealed class FaceitAdvancedStatsService
         public int EntryWins { get; set; }
 
         public int FirstKills { get; set; }
+
+        public int Assists { get; set; }
+
+        public int PistolKills { get; set; }
 
         public int OneVsOneAttempts { get; set; }
 

@@ -27,6 +27,10 @@ public sealed class FaceitAdvancedPlayerStats
 
     public int TotalFirstKills { get; set; }
 
+    public int TotalAssists { get; set; }
+
+    public int TotalPistolKills { get; set; }
+
     public int TotalOneVsOneAttempts { get; set; }
 
     public int TotalOneVsOneWins { get; set; }
@@ -59,6 +63,21 @@ public sealed class FaceitAdvancedPlayerStats
         AnalyzedMatches == 0
             ? 0
             : (double)TotalFirstKills / AnalyzedMatches;
+
+    public double AverageAssistsPerMatch =>
+        AnalyzedMatches == 0
+            ? 0
+            : (double)TotalAssists / AnalyzedMatches;
+
+    public double AveragePistolKillsPerMatch =>
+        AnalyzedMatches == 0
+            ? 0
+            : (double)TotalPistolKills / AnalyzedMatches;
+
+    public double? OneVsOneWinPercentage =>
+        TotalOneVsOneAttempts == 0
+            ? null
+            : (double)TotalOneVsOneWins / TotalOneVsOneAttempts * 100;
 
     public double EntrySuccessPercentage =>
         TotalEntryAttempts == 0

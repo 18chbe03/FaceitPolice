@@ -966,6 +966,36 @@ foreach (var player in allPlayers)
 
 
 
+    player.AssistsPerMatch =
+
+        advanced.AverageAssistsPerMatch;
+
+
+
+    player.PistolKillsPerMatch =
+
+        advanced.AveragePistolKillsPerMatch;
+
+
+
+    player.FirstKillsPerMatch =
+
+        advanced.AverageFirstKillsPerMatch;
+
+
+
+    player.OneVsOneAttempts =
+
+        advanced.TotalOneVsOneAttempts;
+
+
+
+    player.OneVsOneWinPercentage =
+
+        advanced.OneVsOneWinPercentage;
+
+
+
     player.UtilityDamagePerRound =
 
         advanced.UtilityDamagePerRound;
@@ -3007,6 +3037,29 @@ static string BuildAwards(
                 advancedAwardPlayers
                     .MaxBy(x => x.EntryKillsPerMatch)!;
 
+            var bestAssistant =
+                advancedAwardPlayers
+                    .MaxBy(x => x.AssistsPerMatch)!;
+
+            var pistolPig =
+                advancedAwardPlayers
+                    .MaxBy(x => x.PistolKillsPerMatch)!;
+
+            var firstBlood =
+                advancedAwardPlayers
+                    .MaxBy(x => x.FirstKillsPerMatch)!;
+
+            var oneVsOneCandidates =
+                advancedAwardPlayers
+                    .Where(x =>
+                        x.OneVsOneAttempts >= 3 &&
+                        x.OneVsOneWinPercentage.HasValue)
+                    .ToList();
+
+            var oneVsOneKing =
+                oneVsOneCandidates
+                    .MaxBy(x => x.OneVsOneWinPercentage);
+
             var entrySuccessCandidates =
                 advancedAwardPlayers
                     .Where(x => x.TotalEntryAttempts >= 5)
@@ -3053,6 +3106,38 @@ static string BuildAwards(
                 "ENTRY MASKINEN",
                 $"{EscapeDiscordMarkdown(doorKicker.Name)} — " +
                 $"{doorKicker.EntryKillsPerMatch:0.00} entry kills/match");
+
+            AppendAward(
+                sb,
+                "🤝",
+                "SERVITÖREN",
+                $"{EscapeDiscordMarkdown(bestAssistant.Name)} — " +
+                $"{bestAssistant.AssistsPerMatch:0.00} assists/match");
+
+            AppendAward(
+                sb,
+                "🔫",
+                "PISTOLGRISEN",
+                $"{EscapeDiscordMarkdown(pistolPig.Name)} — " +
+                $"{pistolPig.PistolKillsPerMatch:0.00} pistol kills/match");
+
+            AppendAward(
+                sb,
+                "🩸",
+                "FÖRSTA BLODET",
+                $"{EscapeDiscordMarkdown(firstBlood.Name)} — " +
+                $"{firstBlood.FirstKillsPerMatch:0.00} first kills/match");
+
+            if (oneVsOneKing is not null)
+            {
+                AppendAward(
+                    sb,
+                    "🥊",
+                    "DU OCH JAG NU",
+                    $"{EscapeDiscordMarkdown(oneVsOneKing.Name)} — " +
+                    $"{oneVsOneKing.OneVsOneWinPercentage!.Value:0}% vunna 1v1 " +
+                    $"({oneVsOneKing.OneVsOneAttempts} försök)");
+            }
 
             if (duelKing is not null)
             {
@@ -3959,6 +4044,26 @@ internal sealed class PlayerLeaderboardEntry
 
 
     public double? ClutchWinPercentage { get; set; }
+
+
+
+    public double AssistsPerMatch { get; set; }
+
+
+
+    public double PistolKillsPerMatch { get; set; }
+
+
+
+    public double FirstKillsPerMatch { get; set; }
+
+
+
+    public int OneVsOneAttempts { get; set; }
+
+
+
+    public double? OneVsOneWinPercentage { get; set; }
 
 
 
