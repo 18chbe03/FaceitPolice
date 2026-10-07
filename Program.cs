@@ -28,6 +28,8 @@ const int MinimumGroupMatchesForRanking = 2;
 
 const int MinimumGroupMatchesForAwards = 5;
 
+const int MinimumMonthlyGroupMatches = 30;
+
 
 
 
@@ -96,6 +98,14 @@ var configuredAwardsMessageId =
 
 
 
+var monthlyDiscordWebhook =
+
+    Environment.GetEnvironmentVariable(
+
+        "MONTHLY_DISCORD_WEBHOOK_URL");
+
+
+
 var playersConfig =
 
     Environment.GetEnvironmentVariable(
@@ -142,6 +152,20 @@ var discordClient =
 
 
 
+DiscordClient? monthlyDiscordClient =
+
+    string.IsNullOrWhiteSpace(monthlyDiscordWebhook)
+
+        ? null
+
+        : new DiscordClient(
+
+            httpClient,
+
+            monthlyDiscordWebhook);
+
+
+
 var historyService =
 
     new EloHistoryService();
@@ -176,6 +200,12 @@ var discordStateService =
 
 
 
+var monthlyPlayerPublicationStateService =
+
+    new MonthlyPlayerPublicationStateService();
+
+
+
 
 
 // --------------------------------------------------
@@ -195,6 +225,66 @@ var discordState =
     await discordStateService.LoadAsync();
 
 
+
+var monthlyPublicationState =
+
+    await monthlyPlayerPublicationStateService.LoadAsync();
+
+
+
+var currentMonthKey =
+
+    GetCurrentMonthKey();
+
+
+
+if (string.IsNullOrWhiteSpace(
+        monthlyPublicationState.TrackingStartedMonth))
+{
+
+    monthlyPublicationState.TrackingStartedMonth =
+
+        currentMonthKey;
+
+
+
+    await monthlyPlayerPublicationStateService.SaveAsync(
+
+        monthlyPublicationState);
+
+
+
+    Console.WriteLine(
+
+        $"📅 Månadens spelare börjar spåras från {currentMonthKey}. " +
+
+        "Första priset publiceras när den månaden är avslutad.");
+
+}
+
+
+
+var previousCompletedMonth =
+
+    GetPreviousCompletedMonthWindow();
+
+
+
+var shouldPublishMonthlyPlayer =
+
+    monthlyDiscordClient is not null &&
+
+    string.CompareOrdinal(
+
+        previousCompletedMonth.Key,
+
+        monthlyPublicationState.TrackingStartedMonth) >= 0 &&
+
+    !monthlyPublicationState.PublishedMonths.Contains(
+
+        previousCompletedMonth.Key,
+
+        StringComparer.OrdinalIgnoreCase);
 
 
 
@@ -241,6 +331,16 @@ var nicknames =
 
 
 
+MonthWindow? monthToPublish =
+
+    shouldPublishMonthlyPlayer
+
+        ? previousCompletedMonth
+
+        : null;
+
+
+
 var fetchedPlayers =
 
     new List<FetchedPlayerData>();
@@ -248,6 +348,12 @@ var fetchedPlayers =
 
 
 var allPlayerStats =
+
+    new List<FaceitStatsResponse>();
+
+
+
+var monthlyAllPlayerStats =
 
     new List<FaceitStatsResponse>();
 
@@ -323,6 +429,46 @@ foreach (var nickname in nicknames)
 
 
 
+        var monthlyStats =
+
+            new FaceitStatsResponse();
+
+
+
+        if (monthToPublish is not null)
+
+        {
+
+            try
+
+            {
+
+                monthlyStats =
+
+                    await faceitClient.GetStatsForPeriodAsync(
+
+                        player.PlayerId,
+
+                        monthToPublish.FromUtc,
+
+                        monthToPublish.ToUtc);
+
+            }
+
+            catch (Exception ex)
+
+            {
+
+                Console.WriteLine(
+
+                    $"⚠️ Månadsstatistik saknas för {nickname}: {ex.Message}");
+
+            }
+
+        }
+
+
+
         var activityMatches =
 
             await faceitClient.GetMatchCountAsync(
@@ -339,6 +485,12 @@ foreach (var nickname in nicknames)
 
 
 
+        monthlyAllPlayerStats.Add(
+
+            monthlyStats);
+
+
+
         fetchedPlayers.Add(
 
             new FetchedPlayerData
@@ -350,6 +502,8 @@ foreach (var nickname in nicknames)
                 Game = cs2,
 
                 FullStats = fullStats,
+
+                MonthlyStats = monthlyStats,
 
                 ActivityMatches = activityMatches
 
@@ -408,6 +562,45 @@ Console.WriteLine(
     $"👥 Hittade {qualifiedMatchTeams.Count} match/lag-kombinationer " +
 
     $"med minst {MinimumGroupPlayersPerMatch} spelare från gruppen.");
+
+
+IReadOnlySet<string> monthlyQualifiedMatchTeams =
+
+    new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+
+
+if (monthToPublish is not null)
+
+{
+
+    monthlyQualifiedMatchTeams =
+
+        groupMatchFilterService.FindQualifiedMatchTeams(
+
+            monthlyAllPlayerStats,
+
+            MinimumGroupPlayersPerMatch);
+
+
+
+    Console.WriteLine(
+
+        $"📅 {monthToPublish.Label}: {monthlyQualifiedMatchTeams.Count} " +
+
+        "gruppmatch/lag-kombinationer hittades.");
+
+}
+
+else
+
+{
+
+    Console.WriteLine(
+
+        $"📅 Månadens spelare: inget nytt pris att publicera den här körningen.");
+
+}
 
 
 
@@ -845,6 +1038,260 @@ await historyService.SaveAsync();
 
 
 
+// --------------------------------------------------
+
+// MÅNADENS SPELARE
+
+// --------------------------------------------------
+
+
+
+string? monthlyMessage = null;
+
+
+
+if (monthToPublish is not null)
+
+{
+
+    var monthlyPlayers =
+
+        new List<MonthlyPlayerEntry>();
+
+
+
+    var monthlyGroupStatsByPlayerId =
+
+        new Dictionary<string, FaceitStatsResponse>(
+
+            StringComparer.OrdinalIgnoreCase);
+
+
+
+    foreach (var fetchedPlayer in fetchedPlayers)
+
+    {
+
+        var monthlyGroupStats =
+
+            groupMatchFilterService.Filter(
+
+                fetchedPlayer.MonthlyStats,
+
+                monthlyQualifiedMatchTeams);
+
+
+
+        monthlyGroupStatsByPlayerId[
+
+            fetchedPlayer.Player.PlayerId] =
+
+            monthlyGroupStats;
+
+
+
+        var monthlyCalculated =
+
+            CalculateStats(
+
+                monthlyGroupStats);
+
+
+
+        var monthlyEloDelta =
+
+            historyService.GetEloDeltaBetween(
+
+                fetchedPlayer.Player.Nickname,
+
+                monthToPublish.StartDate,
+
+                monthToPublish.EndDateExclusive);
+
+
+
+        var monthEndElo =
+
+            historyService.GetLatestEloBefore(
+
+                fetchedPlayer.Player.Nickname,
+
+                monthToPublish.EndDateExclusive);
+
+
+
+        monthlyPlayers.Add(
+
+            new MonthlyPlayerEntry
+
+            {
+
+                PlayerId = fetchedPlayer.Player.PlayerId,
+
+                Name = fetchedPlayer.Player.Nickname,
+
+                EloAtMonthEnd = monthEndElo,
+
+                EloDelta = monthlyEloDelta,
+
+                Matches = monthlyCalculated.Matches,
+
+                Wins = monthlyCalculated.Wins,
+
+                Losses = monthlyCalculated.Losses,
+
+                WinRate = monthlyCalculated.WinRate,
+
+                Kd = monthlyCalculated.Kd,
+
+                Adr = monthlyCalculated.Adr,
+
+                AverageMvps = monthlyCalculated.AverageMvps
+
+            });
+
+    }
+
+
+
+    var monthlyAdvancedInputs =
+
+        monthlyPlayers
+
+            .Where(x =>
+
+                x.Matches >= MinimumMonthlyGroupMatches)
+
+            .Select(x =>
+
+            {
+
+                var stats =
+
+                    monthlyGroupStatsByPlayerId[x.PlayerId];
+
+
+
+                var matchIds =
+
+                    stats.Items
+
+                        .Select(item => item.Stats.MatchId)
+
+                        .Where(matchId =>
+
+                            !string.IsNullOrWhiteSpace(matchId))
+
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+
+                        .ToList();
+
+
+
+                return new FaceitAdvancedStatsPlayerInput
+
+                {
+
+                    PlayerId = x.PlayerId,
+
+                    Name = x.Name,
+
+                    MatchIds = matchIds
+
+                };
+
+            })
+
+            .ToList();
+
+
+
+    if (monthlyAdvancedInputs.Count > 0)
+
+    {
+
+        Console.WriteLine();
+
+        Console.WriteLine(
+
+            $"🏆 Hämtar advanced stats för {monthToPublish.Label}...");
+
+
+
+        var monthlyAdvancedStatsByPlayerId =
+
+            await faceitAdvancedStatsService.CalculateAsync(
+
+                monthlyAdvancedInputs);
+
+
+
+        foreach (var player in monthlyPlayers)
+
+        {
+
+            if (!monthlyAdvancedStatsByPlayerId.TryGetValue(
+
+                    player.PlayerId,
+
+                    out var advanced))
+
+            {
+
+                continue;
+
+            }
+
+
+
+            player.AdvancedMatches =
+
+                advanced.AnalyzedMatches;
+
+
+
+            player.EntryKillsPerMatch =
+
+                advanced.AverageEntryKillsPerMatch;
+
+
+
+            player.EntrySuccessPercentage =
+
+                advanced.EntrySuccessPercentage;
+
+        }
+
+    }
+
+
+
+    foreach (var player in monthlyPlayers)
+
+    {
+
+        player.Score =
+
+            CalculateMonthlyScore(
+
+                player);
+
+    }
+
+
+
+    monthlyMessage =
+
+        BuildMonthlyPlayerBoard(
+
+            monthlyPlayers,
+
+            monthToPublish.Label,
+
+            MinimumMonthlyGroupMatches);
+
+}
+
 
 
 // --------------------------------------------------
@@ -1208,6 +1655,86 @@ if (tiltWatchPlayer is not null)
 
 
 
+// --------------------------------------------------
+
+// MÅNADENS SPELARE — EGEN DISCORD-KANAL
+
+// --------------------------------------------------
+
+
+
+string? publishedMonthlyPlayerMonth = null;
+
+
+
+if (monthToPublish is not null &&
+
+    monthlyDiscordClient is not null &&
+
+    monthlyMessage is not null)
+
+{
+
+    await monthlyDiscordClient.PublishMonthlyPlayerAsync(
+
+        monthLabel:
+
+            monthToPublish.Label,
+
+        content:
+
+            monthlyMessage);
+
+
+
+    monthlyPublicationState.PublishedMonths.Add(
+
+        monthToPublish.Key);
+
+
+
+    monthlyPublicationState.PublishedMonths =
+
+        monthlyPublicationState.PublishedMonths
+
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+
+            .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
+
+            .ToList();
+
+
+
+    await monthlyPlayerPublicationStateService.SaveAsync(
+
+        monthlyPublicationState);
+
+
+
+    publishedMonthlyPlayerMonth =
+
+        monthToPublish.Key;
+
+
+
+    Console.WriteLine(
+
+        $"🏆 {monthToPublish.Label} markerad som publicerad. " +
+
+        "Den skickas inte igen på nästa körning.");
+
+}
+
+else if (monthlyDiscordClient is null)
+
+{
+
+    Console.WriteLine(
+
+        "ℹ️ MONTHLY_DISCORD_WEBHOOK_URL saknas. Månadens spelare hoppas över.");
+
+}
+
 
 
 // --------------------------------------------------
@@ -1255,6 +1782,551 @@ Console.WriteLine(
     $"Tilt Watch ID: {returnedTiltWatchMessageId}");
 
 
+Console.WriteLine(
+
+    $"Monthly Player published: {publishedMonthlyPlayerMonth ?? "nej"}");
+
+
+
+
+
+// --------------------------------------------------
+
+// MÅNADSFÖNSTER + MÅNADSRATING
+
+// --------------------------------------------------
+
+
+
+static string GetCurrentMonthKey()
+
+{
+
+    var timeZone =
+
+        GetSwedenTimeZone();
+
+
+
+    var localNow =
+
+        TimeZoneInfo.ConvertTime(
+
+            DateTimeOffset.UtcNow,
+
+            timeZone);
+
+
+
+    return $"{localNow:yyyy-MM}";
+
+}
+
+
+
+static MonthWindow GetPreviousCompletedMonthWindow()
+
+{
+
+    var nowUtc =
+
+        DateTimeOffset.UtcNow;
+
+
+
+    var timeZone =
+
+        GetSwedenTimeZone();
+
+
+
+    var localNow =
+
+        TimeZoneInfo.ConvertTime(
+
+            nowUtc,
+
+            timeZone);
+
+
+
+    var currentMonthStartLocal =
+
+        new DateTime(
+
+            localNow.Year,
+
+            localNow.Month,
+
+            1,
+
+            0,
+
+            0,
+
+            0,
+
+            DateTimeKind.Unspecified);
+
+
+
+    var previousMonthStartLocal =
+
+        currentMonthStartLocal.AddMonths(-1);
+
+
+
+    var fromUtc =
+
+        new DateTimeOffset(
+
+            TimeZoneInfo.ConvertTimeToUtc(
+
+                previousMonthStartLocal,
+
+                timeZone));
+
+
+
+    var nextMonthUtc =
+
+        new DateTimeOffset(
+
+            TimeZoneInfo.ConvertTimeToUtc(
+
+                currentMonthStartLocal,
+
+                timeZone));
+
+
+
+    var toUtc =
+
+        nextMonthUtc.AddMilliseconds(-1);
+
+
+
+    var culture =
+
+        CultureInfo.GetCultureInfo(
+
+            "sv-SE");
+
+
+
+    var label =
+
+        previousMonthStartLocal
+
+            .ToString(
+
+                "MMMM yyyy",
+
+                culture)
+
+            .ToUpper(culture);
+
+
+
+    return new MonthWindow
+
+    {
+
+        Key = previousMonthStartLocal.ToString("yyyy-MM", CultureInfo.InvariantCulture),
+
+        FromUtc = fromUtc,
+
+        ToUtc = toUtc,
+
+        StartDate = DateOnly.FromDateTime(previousMonthStartLocal),
+
+        EndDateExclusive = DateOnly.FromDateTime(currentMonthStartLocal),
+
+        Label = label
+
+    };
+
+}
+
+
+
+static TimeZoneInfo GetSwedenTimeZone()
+
+{
+
+    try
+
+    {
+
+        return TimeZoneInfo.FindSystemTimeZoneById(
+
+            "Europe/Stockholm");
+
+    }
+
+    catch (TimeZoneNotFoundException)
+
+    {
+
+        try
+
+        {
+
+            return TimeZoneInfo.FindSystemTimeZoneById(
+
+                "W. Europe Standard Time");
+
+        }
+
+        catch (TimeZoneNotFoundException)
+
+        {
+
+            return TimeZoneInfo.Utc;
+
+        }
+
+    }
+
+}
+
+
+
+static double CalculateMonthlyScore(
+
+    MonthlyPlayerEntry player)
+
+{
+
+    if (player.Matches == 0)
+
+        return 0;
+
+
+
+    var kdScore =
+
+        NormalizeAbsolute(
+
+            player.Kd,
+
+            passiveValue: 0.75,
+
+            aggressiveValue: 1.40);
+
+
+
+    var adrScore =
+
+        NormalizeAbsolute(
+
+            player.Adr,
+
+            passiveValue: 55,
+
+            aggressiveValue: 100);
+
+
+
+    var winRateScore =
+
+        NormalizeAbsolute(
+
+            player.WinRate,
+
+            passiveValue: 35,
+
+            aggressiveValue: 70);
+
+
+
+    var eloFormScore =
+
+        player.EloDelta.HasValue
+
+            ? NormalizeAbsolute(
+
+                player.EloDelta.Value,
+
+                passiveValue: -100,
+
+                aggressiveValue: 100)
+
+            : 0.5;
+
+
+
+    var entryImpactScore =
+
+        0.5;
+
+
+
+    if (player.AdvancedMatches > 0)
+
+    {
+
+        var entrySuccessScore =
+
+            NormalizeAbsolute(
+
+                player.EntrySuccessPercentage,
+
+                passiveValue: 25,
+
+                aggressiveValue: 60);
+
+
+
+        var entryKillsScore =
+
+            NormalizeAbsolute(
+
+                player.EntryKillsPerMatch,
+
+                passiveValue: 0.5,
+
+                aggressiveValue: 2.5);
+
+
+
+        entryImpactScore =
+
+            entrySuccessScore * 0.70 +
+
+            entryKillsScore * 0.30;
+
+    }
+
+
+
+    return Math.Round(
+
+        (kdScore * 0.25 +
+
+         adrScore * 0.25 +
+
+         winRateScore * 0.20 +
+
+         eloFormScore * 0.15 +
+
+         entryImpactScore * 0.15) * 100,
+
+        1,
+
+        MidpointRounding.AwayFromZero);
+
+}
+
+
+
+static string BuildMonthlyPlayerBoard(
+
+    IReadOnlyList<MonthlyPlayerEntry> players,
+
+    string monthLabel,
+
+    int minimumMatches)
+
+{
+
+    var sb =
+
+        new StringBuilder();
+
+
+
+    var eligible =
+
+        players
+
+            .Where(x => x.Matches >= minimumMatches)
+
+            .OrderByDescending(x => x.Score)
+
+            .ThenByDescending(x => x.Matches)
+
+            .ThenByDescending(x => x.Adr)
+
+            .ToList();
+
+
+
+    if (eligible.Count == 0)
+
+    {
+
+        sb.AppendLine("⭐ ━━━━━━━━━━━━━━━━━ ⭐");
+
+        sb.AppendLine("### 🏆 INGEN VINNARE");
+
+        sb.AppendLine("⭐ ━━━━━━━━━━━━━━━━━ ⭐");
+
+        sb.AppendLine();
+
+        sb.AppendLine(
+
+            $"Ingen nådde {minimumMatches} gruppmatcher under {monthLabel.ToLowerInvariant()}.");
+
+        sb.AppendLine();
+
+        sb.AppendLine(
+
+            "*Ingen spelare utses den här månaden.*");
+
+
+
+        return sb.ToString();
+
+    }
+
+
+
+    var winner =
+
+        eligible[0];
+
+
+
+    sb.AppendLine("⭐ ━━━━━━━━━━━━━━━━━ ⭐");
+
+    sb.AppendLine(
+
+        $"### 🏆 {EscapeDiscordMarkdown(winner.Name)} 🏆");
+
+    sb.AppendLine("⭐ ━━━━━━━━━━━━━━━━━ ⭐");
+
+    sb.AppendLine();
+
+    sb.AppendLine(
+
+        $"📊 **{winner.Matches} gruppmatcher** • " +
+
+        $"{winner.Wins}V-{winner.Losses}F • 🏆 {winner.WinRate:0}% vinst");
+
+
+
+    sb.AppendLine(
+
+        $"⚔️ {winner.Kd:0.00} K/D • " +
+
+        $"💥 {winner.Adr:0.0} ADR • " +
+
+        $"⭐ {winner.AverageMvps:0.00} MVP/match");
+
+
+
+    var eloText =
+
+        winner.EloAtMonthEnd.HasValue
+
+            ? $"{winner.EloAtMonthEnd.Value} ELO • {FormatMonthlyEloDelta(winner.EloDelta)}"
+
+            : FormatMonthlyEloDelta(winner.EloDelta);
+
+
+
+    sb.AppendLine(
+
+        $"📈 {eloText} • " +
+
+        $"🚪 {winner.EntryKillsPerMatch:0.0} entry kills/m • " +
+
+        $"✅ {winner.EntrySuccessPercentage:0}% entry success");
+
+
+
+    sb.AppendLine();
+
+    sb.AppendLine(
+
+        $"### ⭐ Månadsrating: {winner.Score:0.0}/100 ⭐");
+
+
+
+    if (eligible.Count > 1)
+
+    {
+
+        sb.AppendLine();
+
+        sb.AppendLine(
+
+            $"🥈 **{EscapeDiscordMarkdown(eligible[1].Name)}** — " +
+
+            $"{eligible[1].Score:0.0}/100");
+
+    }
+
+
+
+    if (eligible.Count > 2)
+
+    {
+
+        sb.AppendLine(
+
+            $"🥉 **{EscapeDiscordMarkdown(eligible[2].Name)}** — " +
+
+            $"{eligible[2].Score:0.0}/100");
+
+    }
+
+
+
+    sb.AppendLine();
+
+    sb.AppendLine(
+
+        "*Rating: 25% K/D • 25% ADR • 20% vinst • 15% ELO-form • 15% entry-impact.*");
+
+
+
+    sb.AppendLine(
+
+        "*Entry-impact: 70% entry success • 30% entry kills/match. MVP visas bara som extra statistik.*");
+
+
+
+    sb.AppendLine(
+
+        $"*Minst {minimumMatches} gruppmatcher krävs. Nuvarande ELO ger inga bonuspoäng i sig.*");
+
+
+
+    return sb.ToString();
+
+}
+
+
+
+static string FormatMonthlyEloDelta(
+
+    int? delta)
+
+{
+
+    if (!delta.HasValue)
+
+        return "ELO-form saknas";
+
+
+
+    if (delta.Value > 0)
+
+        return $"+{delta.Value} ELO";
+
+
+
+    if (delta.Value < 0)
+
+        return $"{delta.Value} ELO";
+
+
+
+    return "0 ELO";
+
+}
 
 
 
@@ -2602,7 +3674,107 @@ internal sealed class FetchedPlayerData
 
 
 
+    public FaceitStatsResponse MonthlyStats { get; init; } = new();
+
+
+
     public int ActivityMatches { get; init; }
+
+}
+
+
+
+internal sealed class MonthWindow
+
+{
+
+    public string Key { get; init; } = "";
+
+
+
+    public DateTimeOffset FromUtc { get; init; }
+
+
+
+    public DateTimeOffset ToUtc { get; init; }
+
+
+
+    public DateOnly StartDate { get; init; }
+
+
+
+    public DateOnly EndDateExclusive { get; init; }
+
+
+
+    public string Label { get; init; } = "";
+
+}
+
+
+
+internal sealed class MonthlyPlayerEntry
+
+{
+
+    public string PlayerId { get; init; } = "";
+
+
+
+    public string Name { get; init; } = "";
+
+
+
+    public int? EloAtMonthEnd { get; init; }
+
+
+
+    public int? EloDelta { get; init; }
+
+
+
+    public int Matches { get; init; }
+
+
+
+    public int Wins { get; init; }
+
+
+
+    public int Losses { get; init; }
+
+
+
+    public double WinRate { get; init; }
+
+
+
+    public double Kd { get; init; }
+
+
+
+    public double Adr { get; init; }
+
+
+
+    public double AverageMvps { get; init; }
+
+
+
+    public int AdvancedMatches { get; set; }
+
+
+
+    public double EntryKillsPerMatch { get; set; }
+
+
+
+    public double EntrySuccessPercentage { get; set; }
+
+
+
+    public double Score { get; set; }
 
 }
 

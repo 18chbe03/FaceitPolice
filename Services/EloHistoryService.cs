@@ -63,6 +63,98 @@ public sealed class EloHistoryService
         return currentElo - oldSnapshot.Elo;
     }
 
+    public int? GetEloDeltaFrom(
+        string nickname,
+        int currentElo,
+        DateOnly fromDate)
+    {
+        if (!_history.Players.TryGetValue(
+                nickname,
+                out var snapshots))
+        {
+            return null;
+        }
+
+        var baseline =
+            snapshots
+                .Where(x => x.Date < fromDate)
+                .OrderByDescending(x => x.Date)
+                .FirstOrDefault();
+
+        baseline ??=
+            snapshots
+                .Where(x => x.Date >= fromDate)
+                .OrderBy(x => x.Date)
+                .FirstOrDefault();
+
+        if (baseline is null)
+        {
+            return null;
+        }
+
+        return currentElo - baseline.Elo;
+    }
+
+    public int? GetEloDeltaBetween(
+        string nickname,
+        DateOnly fromDate,
+        DateOnly toDateExclusive)
+    {
+        if (!_history.Players.TryGetValue(
+                nickname,
+                out var snapshots))
+        {
+            return null;
+        }
+
+        var baseline =
+            snapshots
+                .Where(x => x.Date < fromDate)
+                .OrderByDescending(x => x.Date)
+                .FirstOrDefault();
+
+        baseline ??=
+            snapshots
+                .Where(x =>
+                    x.Date >= fromDate &&
+                    x.Date < toDateExclusive)
+                .OrderBy(x => x.Date)
+                .FirstOrDefault();
+
+        var endSnapshot =
+            snapshots
+                .Where(x => x.Date < toDateExclusive)
+                .OrderByDescending(x => x.Date)
+                .FirstOrDefault();
+
+        if (baseline is null ||
+            endSnapshot is null ||
+            endSnapshot.Date < fromDate)
+        {
+            return null;
+        }
+
+        return endSnapshot.Elo - baseline.Elo;
+    }
+
+    public int? GetLatestEloBefore(
+        string nickname,
+        DateOnly toDateExclusive)
+    {
+        if (!_history.Players.TryGetValue(
+                nickname,
+                out var snapshots))
+        {
+            return null;
+        }
+
+        return snapshots
+            .Where(x => x.Date < toDateExclusive)
+            .OrderByDescending(x => x.Date)
+            .Select(x => (int?)x.Elo)
+            .FirstOrDefault();
+    }
+
     public void AddSnapshot(
         string nickname,
         int elo)

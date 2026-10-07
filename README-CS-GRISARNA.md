@@ -155,6 +155,7 @@ Det gör att tavlan med tiden kan visa förändring i ELO i stället för bara a
 ```text
 FACEIT_API_KEY
 DISCORD_WEBHOOK_URL
+MONTHLY_DISCORD_WEBHOOK_URL
 ```
 
 ### Repository variables
@@ -223,3 +224,38 @@ Det här är inte tänkt som en seriös esportplattform.
 Det är **CS Grisarnas interna statistikcentral**.
 
 Siffrorna ska stämma, men presentationen får gärna vara lite dum.
+
+---
+
+## 🏆 Månadens spelare
+
+Månadens spelare ligger i en egen Discord-kanal och använder `MONTHLY_DISCORD_WEBHOOK_URL`.
+
+Det är ett månadspris, inte en live-tavla. När en kalendermånad är slut räknar appen på **alla gruppmatcher från den avslutade månaden**. Minst **30 gruppmatcher** krävs för att kunna vinna.
+
+Ratingen är 0–100 och väger:
+
+- 25 % K/D
+- 25 % ADR
+- 20 % winrate
+- 15 % ELO-form under månaden
+- 15 % entry-impact
+
+Entry-impact består av 70 % entry success och 30 % entry kills per match. MVP/match visas på vinnaren men påverkar inte ratingen. Nuvarande ELO i sig ger inga bonuspoäng, så en spelare med lägre ELO kan vinna om månaden faktiskt varit bättre.
+
+### Bara ett meddelande per månad
+
+Appen sparar publicerade månader i:
+
+```text
+history/monthly-player-state.json
+```
+
+Första gången funktionen körs sparas månaden då spårningen startade. Den publicerar alltså inte gamla månader bakåt i tiden. När nästa månad börjar tittar den på föregående, avslutade månad.
+
+Efter att Discord-meddelandet har skapats läggs exempelvis `2026-10` i `PublishedMonths`. På alla senare körningar ser appen att oktober redan är publicerad och hoppar över den. Workflowen committar state-filen tillsammans med ELO-historiken, så skyddet finns kvar mellan GitHub Actions-körningar.
+
+Det behövs ingen `MONTHLY_PLAYER_MESSAGE_ID`, eftersom varje månadspris ska ligga kvar som ett eget historiskt meddelande i kanalen.
+
+Om Discord-anropet misslyckas markeras månaden inte som publicerad, så nästa körning kan försöka igen.
+

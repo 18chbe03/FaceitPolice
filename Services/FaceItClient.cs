@@ -185,6 +185,78 @@ public sealed class FaceitClient
                ?? new FaceitStatsResponse();
     }
 
+    public async Task<FaceitStatsResponse> GetStatsForPeriodAsync(
+        string playerId,
+        DateTimeOffset fromUtc,
+        DateTimeOffset toUtc,
+        CancellationToken cancellationToken = default)
+    {
+        const int pageSize = 100;
+        const int maxOffset = 200;
+
+        var result =
+            new FaceitStatsResponse();
+
+        var from =
+            fromUtc.ToUnixTimeMilliseconds();
+
+        var to =
+            toUtc.ToUnixTimeMilliseconds();
+
+        for (var offset = 0; offset <= maxOffset; offset += pageSize)
+        {
+            var url =
+                $"https://open.faceit.com/data/v4/players/" +
+                $"{playerId}/games/cs2/stats" +
+                $"?offset={offset}" +
+                $"&limit={pageSize}" +
+                $"&from={from}" +
+                $"&to={to}";
+
+            using var request =
+                CreateRequest(url);
+
+            using var response =
+                await _httpClient.SendAsync(
+                    request,
+                    cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var body =
+                    await response.Content.ReadAsStringAsync(
+                        cancellationToken);
+
+                throw new Exception(
+                    $"Kunde inte hämta FACEIT-månadsstatistik för {playerId}: " +
+                    $"{(int)response.StatusCode} {body}");
+            }
+
+            var json =
+                await response.Content.ReadAsStringAsync(
+                    cancellationToken);
+
+            var page =
+                JsonSerializer.Deserialize<FaceitStatsResponse>(
+                    json,
+                    new JsonSerializerOptions
+                    {
+                        PropertyNameCaseInsensitive = true
+                    })
+                ?? new FaceitStatsResponse();
+
+            result.Items.AddRange(
+                page.Items);
+
+            if (page.Items.Count < pageSize)
+            {
+                break;
+            }
+        }
+
+        return result;
+    }
+
     public async Task<int> GetMatchCountAsync(
         string playerId,
         int days = 30,

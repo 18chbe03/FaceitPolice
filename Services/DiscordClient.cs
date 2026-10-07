@@ -93,6 +93,35 @@ public sealed class DiscordClient
     }
 
     // --------------------------------------------------
+    // MÅNADENS SPELARE
+    // --------------------------------------------------
+
+    public Task<string?> PublishMonthlyPlayerAsync(
+        string monthLabel,
+        string content,
+        CancellationToken cancellationToken = default)
+    {
+        var title =
+            $"🏆 MÅNADENS SPELARE — {monthLabel}";
+
+        // Månadens spelare är ett arkiv: varje månad skapar ett nytt meddelande.
+        // Dubbletter stoppas av MonthlyPlayerPublicationStateService innan vi kommer hit.
+        return PublishTextMessageAsync(
+            title:
+                title,
+            continuationTitle:
+                $"{title} — FORTSÄTTNING",
+            content:
+                content,
+            messageContent:
+                "",
+            messageId:
+                null,
+            cancellationToken:
+                cancellationToken);
+    }
+
+    // --------------------------------------------------
     // TEXTMEDDELANDE
     // --------------------------------------------------
 
