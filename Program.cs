@@ -1815,31 +1815,31 @@ static string BuildAwards(
         AppendAward(
             sb,
             "⚔️",
-            "K/D-DEMONEN",
+            "K/D-KUNGEN",
             $"{EscapeDiscordMarkdown(bestKd.Name)} — {bestKd.Kd:0.00} K/D");
 
         AppendAward(
             sb,
             "📈",
-            "VINSTMASKINEN",
+            "GRÄSMATTAN",
             $"{EscapeDiscordMarkdown(bestWinRate.Name)} — {bestWinRate.WinRate:0}% vinst");
 
         AppendAward(
             sb,
             "🎯",
-            "AIM-KUNGEN",
+            "PANN-KIRURGEN",
             $"{EscapeDiscordMarkdown(aimKing.Name)} — {aimKing.HeadshotPercentage:0}% HS");
 
         AppendAward(
             sb,
             "💣",
-            "FRAGMASKINEN",
+            "FRAG-MASKINEN",
             $"{EscapeDiscordMarkdown(fragMachine.Name)} — {fragMachine.AverageKills:0.0} kills/match");
 
         AppendAward(
             sb,
             "💥",
-            "SKADEMASKINEN",
+            "SKADE-MASKINEN",
             $"{EscapeDiscordMarkdown(damageDealer.Name)} — {damageDealer.Adr:0.0} ADR");
 
         AppendAward(
@@ -1884,7 +1884,7 @@ static string BuildAwards(
         AppendAward(
             sb,
             "🙈",
-            "Låg HS%, hög sannolikhet för AWP missbruk",
+            "LÅG HS%, AWP MISSBRUK?",
             $"{EscapeDiscordMarkdown(lowestHs.Name)} — {lowestHs.HeadshotPercentage:0}% HS");
 
         AppendAward(
@@ -1978,7 +1978,7 @@ static string BuildAwards(
             AppendAward(
                 sb,
                 "🚪",
-                "DÖRRSPARKAREN",
+                "ENTRY MASKINEN",
                 $"{EscapeDiscordMarkdown(doorKicker.Name)} — " +
                 $"{doorKicker.EntryKillsPerMatch:0.00} entry kills/match");
 
