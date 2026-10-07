@@ -47,6 +47,8 @@ public sealed class FaceitAdvancedPlayerStats
 
     public int TotalFlashSuccesses { get; set; }
 
+    public int TotalUtilityCount { get; set; }
+
     public double TotalUtilityDamage { get; set; }
 
     public double AverageEntryAttemptsPerMatch =>
@@ -99,6 +101,11 @@ public sealed class FaceitAdvancedPlayerStats
         TotalClutchAttempts == 0
             ? null
             : (double)TotalClutchWins / TotalClutchAttempts * 100;
+
+    public double UtilityUsagePerRound =>
+        TotalRounds == 0
+            ? 0
+            : (double)TotalUtilityCount / TotalRounds;
 
     public double UtilityDamagePerRound =>
         TotalRounds == 0

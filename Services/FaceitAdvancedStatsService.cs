@@ -105,6 +105,7 @@ public sealed class FaceitAdvancedStatsService
                 result.TotalEnemiesFlashed += playerMatchStats.EnemiesFlashed;
                 result.TotalFlashCount += playerMatchStats.FlashCount;
                 result.TotalFlashSuccesses += playerMatchStats.FlashSuccesses;
+                result.TotalUtilityCount += playerMatchStats.UtilityCount;
                 result.TotalUtilityDamage += playerMatchStats.UtilityDamage;
             }
         }
@@ -234,6 +235,7 @@ public sealed class FaceitAdvancedStatsService
                         aggregate.EnemiesFlashed += GetInt(playerStats, "Enemies Flashed");
                         aggregate.FlashCount += GetInt(playerStats, "Flash Count");
                         aggregate.FlashSuccesses += GetInt(playerStats, "Flash Successes");
+                        aggregate.UtilityCount += GetInt(playerStats, "Utility Count");
                         aggregate.UtilityDamage += GetDouble(playerStats, "Utility Damage");
                     }
                 }
@@ -381,6 +383,8 @@ public sealed class FaceitAdvancedStatsService
         public int FlashCount { get; set; }
 
         public int FlashSuccesses { get; set; }
+
+        public int UtilityCount { get; set; }
 
         public double UtilityDamage { get; set; }
     }

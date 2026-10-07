@@ -996,6 +996,12 @@ foreach (var player in allPlayers)
 
 
 
+    player.UtilityUsagePerRound =
+
+        advanced.UtilityUsagePerRound;
+
+
+
     player.UtilityDamagePerRound =
 
         advanced.UtilityDamagePerRound;
@@ -3045,9 +3051,19 @@ static string BuildAwards(
                 advancedAwardPlayers
                     .MaxBy(x => x.PistolKillsPerMatch)!;
 
-            var firstBlood =
+            var doorMat =
                 advancedAwardPlayers
-                    .MaxBy(x => x.FirstKillsPerMatch)!;
+                    .MaxBy(x =>
+                        x.EntryAttemptsPerMatch -
+                        x.EntryKillsPerMatch)!;
+
+            var utilitySpammer =
+                advancedAwardPlayers
+                    .MaxBy(x => x.UtilityUsagePerRound)!;
+
+            var utilityAllergy =
+                advancedAwardPlayers
+                    .MinBy(x => x.UtilityUsagePerRound)!;
 
             var oneVsOneCandidates =
                 advancedAwardPlayers
@@ -3123,10 +3139,25 @@ static string BuildAwards(
 
             AppendAward(
                 sb,
-                "🩸",
-                "FÖRSTA BLODET",
-                $"{EscapeDiscordMarkdown(firstBlood.Name)} — " +
-                $"{firstBlood.FirstKillsPerMatch:0.00} first kills/match");
+                "🪦",
+                "DÖRRMATTAN",
+                $"{EscapeDiscordMarkdown(doorMat.Name)} — " +
+                $"{doorMat.EntryAttemptsPerMatch - doorMat.EntryKillsPerMatch:0.00} " +
+                "förlorade entrydueller/match");
+
+            AppendAward(
+                sb,
+                "🧨",
+                "NADESPAMMAREN",
+                $"{EscapeDiscordMarkdown(utilitySpammer.Name)} — " +
+                $"{utilitySpammer.UtilityUsagePerRound:0.00} utility/runda");
+
+            AppendAward(
+                sb,
+                "🙈",
+                "NADEALLERGI",
+                $"{EscapeDiscordMarkdown(utilityAllergy.Name)} — " +
+                $"{utilityAllergy.UtilityUsagePerRound:0.00} utility/runda");
 
             if (oneVsOneKing is not null)
             {
@@ -4064,6 +4095,10 @@ internal sealed class PlayerLeaderboardEntry
 
 
     public double? OneVsOneWinPercentage { get; set; }
+
+
+
+    public double UtilityUsagePerRound { get; set; }
 
 
 
