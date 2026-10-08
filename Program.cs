@@ -2917,13 +2917,13 @@ static string BuildAwards(
         AppendAward(
             sb,
             "👑",
-            "ELO-KUNGEN",
+            "GRÄDDHYLLAN",
             $"{EscapeDiscordMarkdown(eloKing.Name)} — {eloKing.Elo} ELO");
 
         AppendAward(
             sb,
             "⚔️",
-            "K/D-KUNGEN",
+            "SLAKTAREN",
             $"{EscapeDiscordMarkdown(bestKd.Name)} — {bestKd.Kd:0.00} K/D");
 
         AppendAward(
@@ -2935,25 +2935,25 @@ static string BuildAwards(
         AppendAward(
             sb,
             "🎯",
-            "PANN-KIRURGEN",
+            "PANNBENSKIRURGEN",
             $"{EscapeDiscordMarkdown(aimKing.Name)} — {aimKing.HeadshotPercentage:0}% HS");
 
         AppendAward(
             sb,
             "💣",
-            "FRAG-MASKINEN",
+            "FRAGMASKINEN",
             $"{EscapeDiscordMarkdown(fragMachine.Name)} — {fragMachine.AverageKills:0.0} kills/match");
 
         AppendAward(
             sb,
             "💥",
-            "SKADE-MASKINEN",
+            "MÖRBULTAREN",
             $"{EscapeDiscordMarkdown(damageDealer.Name)} — {damageDealer.Adr:0.0} ADR");
 
         AppendAward(
             sb,
             "⭐",
-            "MVP-BONDEN",
+            "MVP BONDEN",
             $"{EscapeDiscordMarkdown(mvpFarmer.Name)} — {mvpFarmer.AverageMvps:0.00} MVP/match");
 
         if (stonks is not null && stonks.EloDelta7Days > 0)
@@ -2961,7 +2961,7 @@ static string BuildAwards(
             AppendAward(
                 sb,
                 "🚀",
-                "STONKS",
+                "ELO-RAKETEN",
                 $"{EscapeDiscordMarkdown(stonks.Name)} — +{stonks.EloDelta7Days} ELO");
         }
 
@@ -3140,7 +3140,7 @@ static string BuildAwards(
             AppendAward(
                 sb,
                 "🪦",
-                "DÖRRMATTAN",
+                "KAMIKAZE",
                 $"{EscapeDiscordMarkdown(doorMat.Name)} — " +
                 $"{doorMat.EntryAttemptsPerMatch - doorMat.EntryKillsPerMatch:0.00} " +
                 "förlorade entrydueller/match");
@@ -3164,7 +3164,7 @@ static string BuildAwards(
                 AppendAward(
                     sb,
                     "🥊",
-                    "DU OCH JAG NU",
+                    "EN MOT EN",
                     $"{EscapeDiscordMarkdown(oneVsOneKing.Name)} — " +
                     $"{oneVsOneKing.OneVsOneWinPercentage!.Value:0}% vunna 1v1 " +
                     $"({oneVsOneKing.OneVsOneAttempts} försök)");
@@ -3201,7 +3201,7 @@ static string BuildAwards(
             AppendAward(
                 sb,
                 "💡",
-                "BLÄNDVERKET",
+                "HELLJUSET",
                 $"{EscapeDiscordMarkdown(flashMaster.Name)} — " +
                 $"{flashMaster.EnemiesFlashedPerRound:0.00} fiender flashade/runda");
 
@@ -3210,7 +3210,7 @@ static string BuildAwards(
                 AppendAward(
      sb,
      "🐔",
-     "BAKRADSOPERATÖREN",
+     "HEJARKLACKEN",
      $"{EscapeDiscordMarkdown(backlineOperator.Name)} — " +
      $"{backlineOperator.CowardiceIndex}/100 kycklingindex");
             }
