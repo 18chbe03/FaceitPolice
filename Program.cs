@@ -3355,6 +3355,23 @@ static string BuildRanking(
         return sb.ToString();
     }
 
+    sb.AppendLine(
+        "*📊 V-F (gruppmatcher) • ⚔️ K/D • 💥 ADR • 🎯 HS • 🆚 motst. snitt-ELO (nu)*");
+
+    sb.AppendLine(
+        "*🚪 entry kills/m • ⚡ entrydueller/m • ✅ entry-vinst% • 🧠 clutch 1v1/1v2*");
+
+    sb.AppendLine(
+        "*🎭 Spelstil: 🦍 först in • 🔥 aggressiv • ⚖️ balanserad • 🐢 försiktig • 🐔 bakåt*");
+
+    sb.AppendLine(
+        $"*🐔 Kycklingindex: 75% hur ofta du går först + 25% hur många entrydueller du tar. Låg = mer gas. Minst {minimumGroupMatches}/{rankingWindow} gruppmatcher.*");
+
+    sb.AppendLine(
+        "*⚠️ x/y adv = advanced stats hämtade för x av y gruppmatcher.*");
+
+    sb.AppendLine();
+
     for (var i = 0; i < players.Count; i++)
     {
         var player = players[i];
@@ -3400,18 +3417,6 @@ static string BuildRanking(
 
         sb.AppendLine();
     }
-
-    sb.AppendLine(
-    "*📊 V-F (gruppmatcher) • ⚔️ K/D • 💥 ADR • 🎯 HS • 🆚 motst. snitt-ELO (nu)*");
-
-    sb.AppendLine(
-        "*🚪 entry kills/m • ⚡ entrydueller/m • ✅ entry-vinst% • 🧠 clutch 1v1/1v2*");
-
-    sb.AppendLine(
-        $"*🎭 Spelstil: 🦍 först in • 🔥 aggressiv • ⚖️ balanserad • 🐢 försiktig • 🐔 bakåt*");
-
-    sb.AppendLine(
-        $"*🐔 Kycklingindex: 75% hur ofta du går först + 25% hur många entrydueller du tar. Låg = mer gas. Minst {minimumGroupMatches}/{rankingWindow} gruppmatcher.*");
 
     if (excludedPlayers.Count > 0)
     {
