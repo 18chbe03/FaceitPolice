@@ -10,6 +10,9 @@ public sealed class FaceitAdvancedStatsService
     private readonly HttpClient _httpClient;
     private readonly string _apiKey;
 
+    private readonly Dictionary<string, MatchStatsSnapshot?> _matchStatsCache =
+        new(StringComparer.OrdinalIgnoreCase);
+
     public FaceitAdvancedStatsService(
         HttpClient httpClient,
         string apiKey)
@@ -152,6 +155,13 @@ public sealed class FaceitAdvancedStatsService
         string matchId,
         CancellationToken cancellationToken)
     {
+        if (_matchStatsCache.TryGetValue(
+                matchId,
+                out var cached))
+        {
+            return cached;
+        }
+
         var url =
             $"https://open.faceit.com/data/v4/matches/" +
             $"{Uri.EscapeDataString(matchId)}/stats";
@@ -174,6 +184,7 @@ public sealed class FaceitAdvancedStatsService
                 $"⚠️ FACEIT advanced match {matchId}: " +
                 $"{(int)response.StatusCode} {response.StatusCode}. Fortsätter.");
 
+            _matchStatsCache[matchId] = null;
             return null;
         }
 
@@ -284,6 +295,7 @@ public sealed class FaceitAdvancedStatsService
                 }
             }
 
+            _matchStatsCache[matchId] = result;
             return result;
         }
         catch (JsonException ex)
@@ -291,6 +303,7 @@ public sealed class FaceitAdvancedStatsService
             Console.WriteLine(
                 $"⚠️ Kunde inte tolka FACEIT advanced match {matchId}: {ex.Message}");
 
+            _matchStatsCache[matchId] = null;
             return null;
         }
     }

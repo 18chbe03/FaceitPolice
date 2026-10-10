@@ -270,6 +270,12 @@ var previousCompletedMonth =
 
 
 
+var currentMonthWindow =
+
+    GetCurrentMonthWindow();
+
+
+
 var shouldPublishMonthlyPlayer =
 
     monthlyDiscordClient is not null &&
@@ -1084,6 +1090,374 @@ await historyService.SaveAsync();
 
 // --------------------------------------------------
 
+// LIVEPROGNOS - MÅNADENS SPELARE
+
+// --------------------------------------------------
+
+
+
+var currentMonthStatsByPlayerId =
+
+    new Dictionary<string, FaceitStatsResponse>(
+
+        StringComparer.OrdinalIgnoreCase);
+
+
+
+var currentMonthAllPlayerStats =
+
+    new List<FaceitStatsResponse>();
+
+
+
+foreach (var fetchedPlayer in fetchedPlayers)
+
+{
+
+    var currentMonthStats =
+
+        FilterStatsToWindow(
+
+            fetchedPlayer.FullStats,
+
+            currentMonthWindow);
+
+
+
+    currentMonthStatsByPlayerId[
+
+        fetchedPlayer.Player.PlayerId] =
+
+        currentMonthStats;
+
+
+
+    currentMonthAllPlayerStats.Add(
+
+        currentMonthStats);
+
+}
+
+
+
+var currentMonthQualifiedMatchTeams =
+
+    groupMatchFilterService.FindQualifiedMatchTeams(
+
+        currentMonthAllPlayerStats,
+
+        MinimumGroupPlayersPerMatch);
+
+
+
+var currentMonthPreviewPlayers =
+
+    new List<MonthlyPlayerEntry>();
+
+
+
+var currentMonthGroupStatsByPlayerId =
+
+    new Dictionary<string, FaceitStatsResponse>(
+
+        StringComparer.OrdinalIgnoreCase);
+
+
+
+foreach (var fetchedPlayer in fetchedPlayers)
+
+{
+
+    var sourceStats =
+
+        currentMonthStatsByPlayerId[
+
+            fetchedPlayer.Player.PlayerId];
+
+
+
+    var groupStats =
+
+        groupMatchFilterService.Filter(
+
+            sourceStats,
+
+            currentMonthQualifiedMatchTeams);
+
+
+
+    currentMonthGroupStatsByPlayerId[
+
+        fetchedPlayer.Player.PlayerId] =
+
+        groupStats;
+
+
+
+    var calculated =
+
+        CalculateStats(
+
+            groupStats);
+
+
+
+    currentMonthPreviewPlayers.Add(
+
+        new MonthlyPlayerEntry
+
+        {
+
+            PlayerId = fetchedPlayer.Player.PlayerId,
+
+            Name = fetchedPlayer.Player.Nickname,
+
+            EloAtMonthEnd = fetchedPlayer.Game.Elo,
+
+            EloDelta = historyService.GetEloDeltaFrom(
+
+                fetchedPlayer.Player.Nickname,
+
+                fetchedPlayer.Game.Elo,
+
+                currentMonthWindow.StartDate),
+
+            Matches = calculated.Matches,
+
+            Wins = calculated.Wins,
+
+            Losses = calculated.Losses,
+
+            WinRate = calculated.WinRate,
+
+            Kd = calculated.Kd,
+
+            Adr = calculated.Adr,
+
+            AverageMvps = calculated.AverageMvps
+
+        });
+
+}
+
+
+
+var currentMonthAdvancedInputs =
+
+    currentMonthPreviewPlayers
+
+        .Where(x => x.Matches > 0)
+
+        .Select(x =>
+
+        {
+
+            var stats =
+
+                currentMonthGroupStatsByPlayerId[x.PlayerId];
+
+
+
+            return new FaceitAdvancedStatsPlayerInput
+
+            {
+
+                PlayerId = x.PlayerId,
+
+                Name = x.Name,
+
+                MatchIds = stats.Items
+
+                    .Select(item => item.Stats.MatchId)
+
+                    .Where(matchId =>
+
+                        !string.IsNullOrWhiteSpace(matchId))
+
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+
+                    .ToList()
+
+            };
+
+        })
+
+        .ToList();
+
+
+
+if (currentMonthAdvancedInputs.Count > 0)
+
+{
+
+    var currentMonthAdvancedStatsByPlayerId =
+
+        await faceitAdvancedStatsService.CalculateAsync(
+
+            currentMonthAdvancedInputs);
+
+
+
+    foreach (var player in currentMonthPreviewPlayers)
+
+    {
+
+        if (!currentMonthAdvancedStatsByPlayerId.TryGetValue(
+
+                player.PlayerId,
+
+                out var advanced))
+
+        {
+
+            continue;
+
+        }
+
+
+
+        player.AdvancedMatches =
+
+            advanced.AnalyzedMatches;
+
+
+
+        player.EntryKillsPerMatch =
+
+            advanced.AverageEntryKillsPerMatch;
+
+
+
+        player.EntrySuccessPercentage =
+
+            advanced.EntrySuccessPercentage;
+
+    }
+
+}
+
+
+
+foreach (var player in currentMonthPreviewPlayers)
+
+{
+
+    player.Score =
+
+        CalculateMonthlyScore(
+
+            player);
+
+}
+
+
+
+var currentMonthPreviewRanking =
+
+    currentMonthPreviewPlayers
+
+        .Where(x => x.Matches > 0)
+
+        .OrderByDescending(x => x.Score)
+
+        .ThenByDescending(x => x.Matches)
+
+        .ThenByDescending(x => x.Adr)
+
+        .Take(3)
+
+        .ToList();
+
+
+
+Console.WriteLine();
+
+Console.WriteLine(
+
+    $"🔮 MÅNADENS SPELARE JUST NU — {currentMonthWindow.Label}");
+
+
+
+if (currentMonthPreviewRanking.Count == 0)
+
+{
+
+    Console.WriteLine(
+
+        "Ingen har spelat en kvalificerad gruppmatch ännu den här månaden.");
+
+}
+
+else
+
+{
+
+    var medals =
+
+        new[] { "🏆", "🥈", "🥉" };
+
+
+
+    for (var i = 0; i < currentMonthPreviewRanking.Count; i++)
+
+    {
+
+        var player =
+
+            currentMonthPreviewRanking[i];
+
+
+
+        Console.WriteLine(
+
+            $"{medals[i]} {player.Name} — {player.Score:0.0}/100 • " +
+
+            $"{player.Matches} gruppmatcher • " +
+
+            $"{player.Kd:0.00} K/D • {player.Adr:0.0} ADR • " +
+
+            $"{player.WinRate:0}% WR • {FormatMonthlyEloDelta(player.EloDelta)}");
+
+    }
+
+
+
+    var currentLeader =
+
+        currentMonthPreviewRanking[0];
+
+
+
+    if (currentLeader.Matches < MinimumMonthlyGroupMatches)
+
+    {
+
+        Console.WriteLine(
+
+            $"ℹ️ Liveprognos: {currentLeader.Name} leder just nu, men minst " +
+
+            $"{MinimumMonthlyGroupMatches} gruppmatcher krävs när månaden är slut.");
+
+    }
+
+    else
+
+    {
+
+        Console.WriteLine(
+
+            $"✅ {currentLeader.Name} uppfyller redan kravet på " +
+
+            $"{MinimumMonthlyGroupMatches} gruppmatcher.");
+
+    }
+
+}
+
+
+
+// --------------------------------------------------
+
 // MÅNADENS SPELARE
 
 // --------------------------------------------------
@@ -1863,6 +2237,196 @@ static string GetCurrentMonthKey()
 
 
     return $"{localNow:yyyy-MM}";
+
+}
+
+
+
+static MonthWindow GetCurrentMonthWindow()
+
+{
+
+    var nowUtc =
+
+        DateTimeOffset.UtcNow;
+
+
+
+    var timeZone =
+
+        GetSwedenTimeZone();
+
+
+
+    var localNow =
+
+        TimeZoneInfo.ConvertTime(
+
+            nowUtc,
+
+            timeZone);
+
+
+
+    var currentMonthStartLocal =
+
+        new DateTime(
+
+            localNow.Year,
+
+            localNow.Month,
+
+            1,
+
+            0,
+
+            0,
+
+            0,
+
+            DateTimeKind.Unspecified);
+
+
+
+    var nextMonthStartLocal =
+
+        currentMonthStartLocal.AddMonths(1);
+
+
+
+    var fromUtc =
+
+        new DateTimeOffset(
+
+            TimeZoneInfo.ConvertTimeToUtc(
+
+                currentMonthStartLocal,
+
+                timeZone));
+
+
+
+    var culture =
+
+        CultureInfo.GetCultureInfo(
+
+            "sv-SE");
+
+
+
+    var label =
+
+        currentMonthStartLocal
+
+            .ToString(
+
+                "MMMM yyyy",
+
+                culture)
+
+            .ToUpper(culture);
+
+
+
+    return new MonthWindow
+
+    {
+
+        Key = currentMonthStartLocal.ToString("yyyy-MM", CultureInfo.InvariantCulture),
+
+        FromUtc = fromUtc,
+
+        ToUtc = nowUtc,
+
+        StartDate = DateOnly.FromDateTime(currentMonthStartLocal),
+
+        EndDateExclusive = DateOnly.FromDateTime(nextMonthStartLocal),
+
+        Label = label
+
+    };
+
+}
+
+
+
+static FaceitStatsResponse FilterStatsToWindow(
+
+    FaceitStatsResponse response,
+
+    MonthWindow window)
+
+{
+
+    return new FaceitStatsResponse
+
+    {
+
+        Items = response.Items
+
+            .Where(item =>
+
+            {
+
+                var finishedAt =
+
+                    ParseMatchFinishedAt(
+
+                        item.Stats.MatchFinishedAt);
+
+
+
+                return finishedAt.HasValue &&
+
+                       finishedAt.Value >= window.FromUtc &&
+
+                       finishedAt.Value <= window.ToUtc;
+
+            })
+
+            .ToList()
+
+    };
+
+}
+
+
+
+static DateTimeOffset? ParseMatchFinishedAt(
+
+    long value)
+
+{
+
+    if (value <= 0)
+
+        return null;
+
+
+
+    try
+
+    {
+
+        // FACEIT har förekommit med både sekunder och millisekunder
+
+        // i tidsfält. Hantera båda formaten.
+
+        return value > 10_000_000_000
+
+            ? DateTimeOffset.FromUnixTimeMilliseconds(value)
+
+            : DateTimeOffset.FromUnixTimeSeconds(value);
+
+    }
+
+    catch (ArgumentOutOfRangeException)
+
+    {
+
+        return null;
+
+    }
 
 }
 
