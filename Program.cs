@@ -16,7 +16,7 @@ using FaceitPolice.Services;
 
 
 
-const int PlayerStatsMatchLimit = 10;
+const int PlayerStatsMatchLimit = 15;
 
 const int MapStatsMatchLimit = 50;
 
@@ -654,11 +654,11 @@ foreach (var fetchedPlayer in fetchedPlayers)
 
 
 
-    // Power Ranking: de senaste 10 matcherna totalt,
+    // Power Ranking: de senaste 15 matcherna totalt,
 
     // men endast kvalificerade gruppmatcher räknas.
 
-    var latestTen =
+    var latestMatches =
 
         TakeFirstMatches(
 
@@ -672,7 +672,7 @@ foreach (var fetchedPlayer in fetchedPlayers)
 
         groupMatchFilterService.Filter(
 
-            latestTen,
+            latestMatches,
 
             qualifiedMatchTeams);
 
@@ -698,7 +698,7 @@ foreach (var fetchedPlayer in fetchedPlayers)
 
         $"👥 {fetchedPlayer.Player.Nickname}: " +
 
-        $"{recentGroupStats.Items.Count}/{latestTen.Items.Count} " +
+        $"{recentGroupStats.Items.Count}/{latestMatches.Items.Count} " +
 
         "av de senaste matcherna räknas som gruppmatcher.");
 
@@ -896,7 +896,9 @@ var advancedStatsByPlayerId =
 
     await faceitAdvancedStatsService.CalculateAsync(
 
-        advancedInputs);
+        advancedInputs,
+
+        includeOpponentElo: true);
 
 
 
@@ -1017,6 +1019,12 @@ foreach (var player in allPlayers)
     player.FlashSuccessPercentage =
 
         advanced.FlashSuccessPercentage;
+
+
+
+    player.AverageOpponentElo =
+
+        advanced.AverageOpponentElo;
 
 }
 
@@ -2799,7 +2807,8 @@ static string BuildRanking(
         sb.AppendLine(
             $"{medal} **{displayName}** • " +
             $"LVL {player.Level} • **{player.Elo} ELO**" +
-            $"{FormatEloDelta(player.EloDelta7Days)}");
+            $"{FormatEloDelta(player.EloDelta7Days)}" +
+            $"{FormatOpponentElo(player.AverageOpponentElo)}");
 
         sb.AppendLine(
             $"> 📊 {player.Wins}V-{player.Losses}F ({player.Matches}) • " +
@@ -2829,7 +2838,7 @@ static string BuildRanking(
     }
 
     sb.AppendLine(
-    "*📊 V-F (gruppmatcher) • ⚔️ K/D • 💥 ADR • 🎯 HS*");
+    "*📊 V-F (gruppmatcher) • ⚔️ K/D • 💥 ADR • 🎯 HS • 🆚 motst. snitt-ELO (nu)*");
 
     sb.AppendLine(
         "*🚪 entry kills/m • ⚡ entrydueller/m • ✅ entry-vinst% • 🧠 clutch 1v1/1v2*");
@@ -3661,6 +3670,15 @@ static void AppendAward(
 
 
 
+static string FormatOpponentElo(
+    double? averageOpponentElo)
+{
+    return averageOpponentElo.HasValue
+        ? $" • 🆚 ~{averageOpponentElo.Value:0}"
+        : "";
+}
+
+
 static string FormatEloDelta(
 
     int? delta)
@@ -4087,6 +4105,10 @@ internal sealed class PlayerLeaderboardEntry
 
 
     public double FirstKillsPerMatch { get; set; }
+
+
+
+    public double? AverageOpponentElo { get; set; }
 
 
 

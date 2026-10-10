@@ -30,9 +30,9 @@ Vi vill inte att en massa soloqueue ska påverka gruppens statistik.
 
 En match räknas därför som en **gruppmatch** när minst **3 spelare från `FACEIT_PLAYERS`** finns i samma lag och samma FACEIT-match.
 
-Rankingen tittar på spelarens **10 senaste FACEIT-matcher** och använder bara de matcher som klarar gruppfiltret.
+Rankingen tittar på spelarens **15 senaste FACEIT-matcher** och använder bara de matcher som klarar gruppfiltret.
 
-- Minst **2 gruppmatcher av 10** krävs för att synas i rankingen.
+- Minst **2 gruppmatcher av 15** krävs för att synas i rankingen.
 - Minst **5 gruppmatcher** krävs för att kunna få en utmärkelse.
 
 Spelare som inte klarar gränsen visas längst ner som **Ej med**, så det är tydligt varför någon saknas.
@@ -51,6 +51,7 @@ Varje spelare får en kompakt rad med de viktigaste siffrorna:
 - ⚡ **Entrydueller/m** – hur många entrydueller spelaren tar per match
 - ✅ **Entry-vinst%** – hur stor andel av entryduellerna som vinns
 - 🧠 **Clutch** – vinstprocent i 1v1 och 1v2
+- 🆚 **Motst. snitt-ELO** – motståndarnas nuvarande genomsnittliga FACEIT ELO i de kvalificerade gruppmatcherna
 
 Advanced-statistiken kommer direkt från FACEIT:s matchstats.
 

@@ -51,6 +51,15 @@ public sealed class FaceitAdvancedPlayerStats
 
     public double TotalUtilityDamage { get; set; }
 
+    public double TotalOpponentMatchAverageElo { get; set; }
+
+    public int OpponentEloMatches { get; set; }
+
+    public double? AverageOpponentElo =>
+        OpponentEloMatches == 0
+            ? null
+            : TotalOpponentMatchAverageElo / OpponentEloMatches;
+
     public double AverageEntryAttemptsPerMatch =>
         AnalyzedMatches == 0
             ? 0

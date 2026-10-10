@@ -20,6 +20,7 @@ public sealed class FaceitAdvancedStatsService
 
     public async Task<IReadOnlyDictionary<string, FaceitAdvancedPlayerStats>> CalculateAsync(
         IReadOnlyList<FaceitAdvancedStatsPlayerInput> players,
+        bool includeOpponentElo = false,
         CancellationToken cancellationToken = default)
     {
         var results =
@@ -31,6 +32,10 @@ public sealed class FaceitAdvancedStatsService
                     Name = x.Name,
                     RequestedMatches = x.MatchIds.Count
                 },
+                StringComparer.OrdinalIgnoreCase);
+
+        var opponentEloCache =
+            new Dictionary<string, int?>(
                 StringComparer.OrdinalIgnoreCase);
 
         var matchToPlayers =
@@ -85,7 +90,7 @@ public sealed class FaceitAdvancedStatsService
                     continue;
                 }
 
-                if (!matchStats.TryGetValue(playerId, out var playerMatchStats))
+                if (!matchStats.PlayerStats.TryGetValue(playerId, out var playerMatchStats))
                 {
                     continue;
                 }
@@ -107,6 +112,24 @@ public sealed class FaceitAdvancedStatsService
                 result.TotalFlashSuccesses += playerMatchStats.FlashSuccesses;
                 result.TotalUtilityCount += playerMatchStats.UtilityCount;
                 result.TotalUtilityDamage += playerMatchStats.UtilityDamage;
+
+                if (includeOpponentElo)
+                {
+                    var opponentAverageElo =
+                        await CalculateOpponentAverageEloAsync(
+                            matchStats.Teams,
+                            playerId,
+                            opponentEloCache,
+                            cancellationToken);
+
+                    if (opponentAverageElo.HasValue)
+                    {
+                        result.TotalOpponentMatchAverageElo +=
+                            opponentAverageElo.Value;
+
+                        result.OpponentEloMatches++;
+                    }
+                }
             }
         }
 
@@ -125,7 +148,7 @@ public sealed class FaceitAdvancedStatsService
         return results;
     }
 
-    private async Task<Dictionary<string, MatchPlayerStats>?> GetMatchStatsAsync(
+    private async Task<MatchStatsSnapshot?> GetMatchStatsAsync(
         string matchId,
         CancellationToken cancellationToken)
     {
@@ -160,8 +183,7 @@ public sealed class FaceitAdvancedStatsService
                 JsonDocument.Parse(body);
 
             var result =
-                new Dictionary<string, MatchPlayerStats>(
-                    StringComparer.OrdinalIgnoreCase);
+                new MatchStatsSnapshot();
 
             if (!document.RootElement.TryGetProperty(
                     "rounds",
@@ -184,6 +206,11 @@ public sealed class FaceitAdvancedStatsService
                     continue;
                 }
 
+                // Laguppställningen är samma genom matchens stats-rundor.
+                // Spara den första kompletta uppställningen för motståndar-ELO.
+                var captureTeamRosters =
+                    result.Teams.Count == 0;
+
                 foreach (var team in teams.EnumerateArray())
                 {
                     if (!team.TryGetProperty(
@@ -194,6 +221,11 @@ public sealed class FaceitAdvancedStatsService
                         continue;
                     }
 
+                    HashSet<string>? roster =
+                        captureTeamRosters
+                            ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                            : null;
+
                     foreach (var player in players.EnumerateArray())
                     {
                         var playerId =
@@ -201,8 +233,14 @@ public sealed class FaceitAdvancedStatsService
                                 player,
                                 "player_id");
 
-                        if (string.IsNullOrWhiteSpace(playerId) ||
-                            !player.TryGetProperty(
+                        if (string.IsNullOrWhiteSpace(playerId))
+                        {
+                            continue;
+                        }
+
+                        roster?.Add(playerId);
+
+                        if (!player.TryGetProperty(
                                 "player_stats",
                                 out var playerStats) ||
                             playerStats.ValueKind != JsonValueKind.Object)
@@ -210,14 +248,14 @@ public sealed class FaceitAdvancedStatsService
                             continue;
                         }
 
-                        if (!result.TryGetValue(
+                        if (!result.PlayerStats.TryGetValue(
                                 playerId,
                                 out var aggregate))
                         {
                             aggregate =
                                 new MatchPlayerStats();
 
-                            result[playerId] =
+                            result.PlayerStats[playerId] =
                                 aggregate;
                         }
 
@@ -238,6 +276,11 @@ public sealed class FaceitAdvancedStatsService
                         aggregate.UtilityCount += GetInt(playerStats, "Utility Count");
                         aggregate.UtilityDamage += GetDouble(playerStats, "Utility Damage");
                     }
+
+                    if (roster is { Count: > 0 })
+                    {
+                        result.Teams.Add(roster);
+                    }
                 }
             }
 
@@ -247,6 +290,125 @@ public sealed class FaceitAdvancedStatsService
         {
             Console.WriteLine(
                 $"⚠️ Kunde inte tolka FACEIT advanced match {matchId}: {ex.Message}");
+
+            return null;
+        }
+    }
+
+    private async Task<double?> CalculateOpponentAverageEloAsync(
+        IReadOnlyList<HashSet<string>> teams,
+        string playerId,
+        Dictionary<string, int?> eloCache,
+        CancellationToken cancellationToken)
+    {
+        var ownTeamIndex =
+            -1;
+
+        for (var i = 0; i < teams.Count; i++)
+        {
+            if (teams[i].Contains(playerId))
+            {
+                ownTeamIndex = i;
+                break;
+            }
+        }
+
+        if (ownTeamIndex < 0)
+        {
+            return null;
+        }
+
+        var opponentIds =
+            teams
+                .Where((_, index) => index != ownTeamIndex)
+                .SelectMany(x => x)
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+        if (opponentIds.Count == 0)
+        {
+            return null;
+        }
+
+        var elos =
+            new List<int>();
+
+        foreach (var opponentId in opponentIds)
+        {
+            if (!eloCache.TryGetValue(opponentId, out var elo))
+            {
+                elo =
+                    await GetCurrentPlayerEloAsync(
+                        opponentId,
+                        cancellationToken);
+
+                eloCache[opponentId] =
+                    elo;
+            }
+
+            if (elo.HasValue)
+            {
+                elos.Add(elo.Value);
+            }
+        }
+
+        return elos.Count == 0
+            ? null
+            : elos.Average();
+    }
+
+    private async Task<int?> GetCurrentPlayerEloAsync(
+        string playerId,
+        CancellationToken cancellationToken)
+    {
+        var url =
+            $"https://open.faceit.com/data/v4/players/" +
+            $"{Uri.EscapeDataString(playerId)}";
+
+        using var request =
+            CreateRequest(url);
+
+        using var response =
+            await _httpClient.SendAsync(
+                request,
+                cancellationToken);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            Console.WriteLine(
+                $"⚠️ Kunde inte hämta motståndar-ELO för {playerId}: " +
+                $"{(int)response.StatusCode} {response.StatusCode}.");
+
+            return null;
+        }
+
+        try
+        {
+            var body =
+                await response.Content.ReadAsStringAsync(
+                    cancellationToken);
+
+            var player =
+                JsonSerializer.Deserialize<FaceitPlayer>(
+                    body,
+                    new JsonSerializerOptions
+                    {
+                        PropertyNameCaseInsensitive = true
+                    });
+
+            if (player is null ||
+                !player.Games.TryGetValue("cs2", out var cs2))
+            {
+                return null;
+            }
+
+            return cs2.Elo;
+        }
+        catch (JsonException ex)
+        {
+            Console.WriteLine(
+                $"⚠️ Kunde inte tolka motståndar-ELO för {playerId}: {ex.Message}");
 
             return null;
         }
@@ -352,6 +514,15 @@ public sealed class FaceitAdvancedStatsService
                 _apiKey);
 
         return request;
+    }
+
+    private sealed class MatchStatsSnapshot
+    {
+        public Dictionary<string, MatchPlayerStats> PlayerStats { get; } =
+            new(StringComparer.OrdinalIgnoreCase);
+
+        public List<HashSet<string>> Teams { get; } =
+            [];
     }
 
     private sealed class MatchPlayerStats
