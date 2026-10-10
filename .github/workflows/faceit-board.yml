@@ -45,16 +45,16 @@ jobs:
 
           FACEIT_PLAYERS: ${{ vars.FACEIT_PLAYERS }}
 
-      - name: Spara ELO-historik och månadsstate
+      - name: Spara historik, cache och månadsstate
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add history/elo-history.json history/monthly-player-state.json
+          git add history/*.json
 
           if ! git diff --cached --quiet; then
-            git commit -m "Uppdatera FACEIT ELO-historik"
+            git commit -m "Uppdatera FACEIT historik och cache"
             git pull --rebase origin main
             git push origin main
           fi

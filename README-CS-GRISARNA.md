@@ -260,3 +260,8 @@ Det behövs ingen `MONTHLY_PLAYER_MESSAGE_ID`, eftersom varje månadspris ska li
 
 Om Discord-anropet misslyckas markeras månaden inte som publicerad, så nästa körning kan försöka igen.
 
+
+
+## FACEIT rate limit och motståndar-ELO
+
+Motståndar-ELO cachas i `history/opponent-elo-cache.json` i upp till 24 timmar för att minska antalet FACEIT-anrop. Advanced stats och ELO-uppslag använder även retry/backoff vid 429/5xx. Om advanced-data saknas för någon match visas `⚠️ x/y adv`; varningen försvinner automatiskt när alla relevanta matcher har analyserats.

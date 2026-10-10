@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using FaceitPolice.Models;
@@ -7,11 +8,52 @@ namespace FaceitPolice.Services;
 
 public sealed class FaceitAdvancedStatsService
 {
+    private const string OpponentEloCacheFile =
+        "history/opponent-elo-cache.json";
+
+    private static readonly TimeSpan OpponentEloCacheTtl =
+        TimeSpan.FromHours(24);
+
+    private static readonly TimeSpan OpponentEloCacheRetention =
+        TimeSpan.FromDays(30);
+
+    // FACEIT började ge 429 när advanced stats + motståndar-ELO hämtades i en burst.
+    // Vi håller därför ett lugnt tempo och respekterar Retry-After när det finns.
+    private static readonly TimeSpan MinimumRequestSpacing =
+        TimeSpan.FromMilliseconds(750);
+
+    private const int MaxRetryAttempts = 3;
+
     private readonly HttpClient _httpClient;
     private readonly string _apiKey;
 
     private readonly Dictionary<string, MatchStatsSnapshot?> _matchStatsCache =
         new(StringComparer.OrdinalIgnoreCase);
+
+    // Cache för hela programkörningen. Även misslyckade uppslag sparas här så att
+    // samma motståndare inte slår API:t om och om igen under samma körning.
+    private readonly Dictionary<string, int?> _opponentEloRunCache =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    private readonly Dictionary<string, OpponentEloCacheEntry> _opponentEloCache =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    private readonly SemaphoreSlim _requestSpacingLock =
+        new(1, 1);
+
+    private DateTimeOffset _nextRequestAtUtc =
+        DateTimeOffset.MinValue;
+
+    private bool _opponentEloCacheLoaded;
+    private bool _opponentEloCacheDirty;
+
+    private readonly JsonSerializerOptions _cacheJsonOptions =
+        new()
+        {
+            WriteIndented = true,
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+            PropertyNameCaseInsensitive = true
+        };
 
     public FaceitAdvancedStatsService(
         HttpClient httpClient,
@@ -26,6 +68,12 @@ public sealed class FaceitAdvancedStatsService
         bool includeOpponentElo = false,
         CancellationToken cancellationToken = default)
     {
+        if (includeOpponentElo)
+        {
+            await EnsureOpponentEloCacheLoadedAsync(
+                cancellationToken);
+        }
+
         var results =
             players.ToDictionary(
                 x => x.PlayerId,
@@ -35,10 +83,6 @@ public sealed class FaceitAdvancedStatsService
                     Name = x.Name,
                     RequestedMatches = x.MatchIds.Count
                 },
-                StringComparer.OrdinalIgnoreCase);
-
-        var opponentEloCache =
-            new Dictionary<string, int?>(
                 StringComparer.OrdinalIgnoreCase);
 
         var matchToPlayers =
@@ -122,7 +166,6 @@ public sealed class FaceitAdvancedStatsService
                         await CalculateOpponentAverageEloAsync(
                             matchStats.Teams,
                             playerId,
-                            opponentEloCache,
                             cancellationToken);
 
                     if (opponentAverageElo.HasValue)
@@ -134,6 +177,12 @@ public sealed class FaceitAdvancedStatsService
                     }
                 }
             }
+        }
+
+        if (includeOpponentElo)
+        {
+            await SaveOpponentEloCacheAsync(
+                cancellationToken);
         }
 
         Console.WriteLine(
@@ -166,13 +215,16 @@ public sealed class FaceitAdvancedStatsService
             $"https://open.faceit.com/data/v4/matches/" +
             $"{Uri.EscapeDataString(matchId)}/stats";
 
-        using var request =
-            CreateRequest(url);
-
         using var response =
-            await _httpClient.SendAsync(
-                request,
+            await SendFaceitGetWithRetryAsync(
+                url,
+                $"advanced match {matchId}",
                 cancellationToken);
+
+        if (response is null)
+        {
+            return null;
+        }
 
         var body =
             await response.Content.ReadAsStringAsync(
@@ -184,7 +236,13 @@ public sealed class FaceitAdvancedStatsService
                 $"⚠️ FACEIT advanced match {matchId}: " +
                 $"{(int)response.StatusCode} {response.StatusCode}. Fortsätter.");
 
-            _matchStatsCache[matchId] = null;
+            // Cacha bara permanenta fel. 429/408/5xx ska kunna provas igen senare
+            // i samma körning, t.ex. när månadsprognosen återanvänder servicen.
+            if (!IsTransientStatusCode(response.StatusCode))
+            {
+                _matchStatsCache[matchId] = null;
+            }
+
             return null;
         }
 
@@ -201,6 +259,7 @@ public sealed class FaceitAdvancedStatsService
                     out var rounds) ||
                 rounds.ValueKind != JsonValueKind.Array)
             {
+                _matchStatsCache[matchId] = result;
                 return result;
             }
 
@@ -311,7 +370,6 @@ public sealed class FaceitAdvancedStatsService
     private async Task<double?> CalculateOpponentAverageEloAsync(
         IReadOnlyList<HashSet<string>> teams,
         string playerId,
-        Dictionary<string, int?> eloCache,
         CancellationToken cancellationToken)
     {
         var ownTeamIndex =
@@ -349,16 +407,10 @@ public sealed class FaceitAdvancedStatsService
 
         foreach (var opponentId in opponentIds)
         {
-            if (!eloCache.TryGetValue(opponentId, out var elo))
-            {
-                elo =
-                    await GetCurrentPlayerEloAsync(
-                        opponentId,
-                        cancellationToken);
-
-                eloCache[opponentId] =
-                    elo;
-            }
+            var elo =
+                await GetCurrentPlayerEloAsync(
+                    opponentId,
+                    cancellationToken);
 
             if (elo.HasValue)
             {
@@ -375,24 +427,68 @@ public sealed class FaceitAdvancedStatsService
         string playerId,
         CancellationToken cancellationToken)
     {
+        if (_opponentEloRunCache.TryGetValue(
+                playerId,
+                out var runCachedElo))
+        {
+            return runCachedElo;
+        }
+
+        await EnsureOpponentEloCacheLoadedAsync(
+            cancellationToken);
+
+        OpponentEloCacheEntry? staleEntry = null;
+
+        if (_opponentEloCache.TryGetValue(
+                playerId,
+                out var persistedEntry))
+        {
+            staleEntry = persistedEntry;
+
+            if (DateTimeOffset.UtcNow - persistedEntry.UpdatedAtUtc <
+                OpponentEloCacheTtl)
+            {
+                _opponentEloRunCache[playerId] =
+                    persistedEntry.Elo;
+
+                return persistedEntry.Elo;
+            }
+        }
+
         var url =
             $"https://open.faceit.com/data/v4/players/" +
             $"{Uri.EscapeDataString(playerId)}";
 
-        using var request =
-            CreateRequest(url);
-
         using var response =
-            await _httpClient.SendAsync(
-                request,
+            await SendFaceitGetWithRetryAsync(
+                url,
+                $"motståndar-ELO {playerId}",
                 cancellationToken);
 
-        if (!response.IsSuccessStatusCode)
+        if (response is null ||
+            !response.IsSuccessStatusCode)
         {
-            Console.WriteLine(
-                $"⚠️ Kunde inte hämta motståndar-ELO för {playerId}: " +
-                $"{(int)response.StatusCode} {response.StatusCode}.");
+            if (response is not null)
+            {
+                Console.WriteLine(
+                    $"⚠️ Kunde inte hämta motståndar-ELO för {playerId}: " +
+                    $"{(int)response.StatusCode} {response.StatusCode}.");
+            }
 
+            // Om en gammal cache finns är den bättre än att tappa ELO helt.
+            if (staleEntry is not null)
+            {
+                Console.WriteLine(
+                    $"♻️ Använder cachad motståndar-ELO för {playerId} " +
+                    $"({staleEntry.Elo}).");
+
+                _opponentEloRunCache[playerId] =
+                    staleEntry.Elo;
+
+                return staleEntry.Elo;
+            }
+
+            _opponentEloRunCache[playerId] = null;
             return null;
         }
 
@@ -413,18 +509,304 @@ public sealed class FaceitAdvancedStatsService
             if (player is null ||
                 !player.Games.TryGetValue("cs2", out var cs2))
             {
+                _opponentEloRunCache[playerId] = null;
                 return null;
             }
 
-            return cs2.Elo;
+            var elo =
+                cs2.Elo;
+
+            _opponentEloRunCache[playerId] =
+                elo;
+
+            _opponentEloCache[playerId] =
+                new OpponentEloCacheEntry
+                {
+                    Elo = elo,
+                    UpdatedAtUtc = DateTimeOffset.UtcNow
+                };
+
+            _opponentEloCacheDirty = true;
+
+            return elo;
         }
         catch (JsonException ex)
         {
             Console.WriteLine(
                 $"⚠️ Kunde inte tolka motståndar-ELO för {playerId}: {ex.Message}");
 
+            if (staleEntry is not null)
+            {
+                _opponentEloRunCache[playerId] =
+                    staleEntry.Elo;
+
+                return staleEntry.Elo;
+            }
+
+            _opponentEloRunCache[playerId] = null;
             return null;
         }
+    }
+
+    private async Task<HttpResponseMessage?> SendFaceitGetWithRetryAsync(
+        string url,
+        string description,
+        CancellationToken cancellationToken)
+    {
+        for (var attempt = 0; attempt <= MaxRetryAttempts; attempt++)
+        {
+            await WaitForRequestSlotAsync(
+                cancellationToken);
+
+            try
+            {
+                using var request =
+                    CreateRequest(url);
+
+                var response =
+                    await _httpClient.SendAsync(
+                        request,
+                        HttpCompletionOption.ResponseHeadersRead,
+                        cancellationToken);
+
+                if (!IsTransientStatusCode(response.StatusCode) ||
+                    attempt == MaxRetryAttempts)
+                {
+                    return response;
+                }
+
+                var retryDelay =
+                    GetRetryDelay(
+                        response,
+                        attempt);
+
+                Console.WriteLine(
+                    $"⏳ FACEIT {(int)response.StatusCode} för {description}. " +
+                    $"Försöker igen {attempt + 1}/{MaxRetryAttempts} om " +
+                    $"{retryDelay.TotalSeconds:0.#} s.");
+
+                response.Dispose();
+
+                await Task.Delay(
+                    retryDelay,
+                    cancellationToken);
+            }
+            catch (HttpRequestException ex)
+            {
+                if (attempt == MaxRetryAttempts)
+                {
+                    Console.WriteLine(
+                        $"⚠️ FACEIT-anrop misslyckades för {description}: {ex.Message}");
+
+                    return null;
+                }
+
+                var retryDelay =
+                    GetFallbackRetryDelay(
+                        attempt);
+
+                Console.WriteLine(
+                    $"⏳ FACEIT nätverksfel för {description}. " +
+                    $"Försöker igen {attempt + 1}/{MaxRetryAttempts} om " +
+                    $"{retryDelay.TotalSeconds:0.#} s.");
+
+                await Task.Delay(
+                    retryDelay,
+                    cancellationToken);
+            }
+        }
+
+        return null;
+    }
+
+    private async Task WaitForRequestSlotAsync(
+        CancellationToken cancellationToken)
+    {
+        await _requestSpacingLock.WaitAsync(
+            cancellationToken);
+
+        try
+        {
+            var now =
+                DateTimeOffset.UtcNow;
+
+            if (_nextRequestAtUtc > now)
+            {
+                await Task.Delay(
+                    _nextRequestAtUtc - now,
+                    cancellationToken);
+            }
+
+            _nextRequestAtUtc =
+                DateTimeOffset.UtcNow + MinimumRequestSpacing;
+        }
+        finally
+        {
+            _requestSpacingLock.Release();
+        }
+    }
+
+    private static bool IsTransientStatusCode(
+        HttpStatusCode statusCode)
+    {
+        return statusCode == HttpStatusCode.TooManyRequests ||
+               statusCode == HttpStatusCode.RequestTimeout ||
+               (int)statusCode >= 500;
+    }
+
+    private static TimeSpan GetRetryDelay(
+        HttpResponseMessage response,
+        int attempt)
+    {
+        var retryAfter =
+            response.Headers.RetryAfter;
+
+        if (retryAfter?.Delta is { } delta &&
+            delta > TimeSpan.Zero)
+        {
+            return ClampRetryDelay(delta);
+        }
+
+        if (retryAfter?.Date is { } retryDate)
+        {
+            var untilRetry =
+                retryDate - DateTimeOffset.UtcNow;
+
+            if (untilRetry > TimeSpan.Zero)
+            {
+                return ClampRetryDelay(untilRetry);
+            }
+        }
+
+        return GetFallbackRetryDelay(attempt);
+    }
+
+    private static TimeSpan GetFallbackRetryDelay(
+        int attempt)
+    {
+        var seconds =
+            Math.Pow(
+                2,
+                attempt + 1);
+
+        return TimeSpan.FromSeconds(
+            Math.Min(seconds, 30));
+    }
+
+    private static TimeSpan ClampRetryDelay(
+        TimeSpan delay)
+    {
+        if (delay < TimeSpan.FromSeconds(1))
+        {
+            return TimeSpan.FromSeconds(1);
+        }
+
+        return delay > TimeSpan.FromMinutes(2)
+            ? TimeSpan.FromMinutes(2)
+            : delay;
+    }
+
+    private async Task EnsureOpponentEloCacheLoadedAsync(
+        CancellationToken cancellationToken)
+    {
+        if (_opponentEloCacheLoaded)
+        {
+            return;
+        }
+
+        _opponentEloCacheLoaded = true;
+
+        if (!File.Exists(OpponentEloCacheFile))
+        {
+            return;
+        }
+
+        try
+        {
+            var json =
+                await File.ReadAllTextAsync(
+                    OpponentEloCacheFile,
+                    cancellationToken);
+
+            var document =
+                JsonSerializer.Deserialize<OpponentEloCacheDocument>(
+                    json,
+                    _cacheJsonOptions);
+
+            if (document?.Players is null)
+            {
+                return;
+            }
+
+            foreach (var item in document.Players)
+            {
+                if (!string.IsNullOrWhiteSpace(item.Key) &&
+                    item.Value is not null)
+                {
+                    _opponentEloCache[item.Key] =
+                        item.Value;
+                }
+            }
+
+            Console.WriteLine(
+                $"♻️ Motståndar-ELO cache: {_opponentEloCache.Count} spelare laddade.");
+        }
+        catch (Exception ex) when (
+            ex is IOException or JsonException or UnauthorizedAccessException)
+        {
+            Console.WriteLine(
+                $"⚠️ Kunde inte läsa motståndar-ELO-cachen: {ex.Message}");
+        }
+    }
+
+    private async Task SaveOpponentEloCacheAsync(
+        CancellationToken cancellationToken)
+    {
+        if (!_opponentEloCacheLoaded ||
+            !_opponentEloCacheDirty)
+        {
+            return;
+        }
+
+        var cutoff =
+            DateTimeOffset.UtcNow - OpponentEloCacheRetention;
+
+        var expiredIds =
+            _opponentEloCache
+                .Where(x => x.Value.UpdatedAtUtc < cutoff)
+                .Select(x => x.Key)
+                .ToList();
+
+        foreach (var playerId in expiredIds)
+        {
+            _opponentEloCache.Remove(playerId);
+        }
+
+        Directory.CreateDirectory("history");
+
+        var document =
+            new OpponentEloCacheDocument
+            {
+                Players =
+                    new Dictionary<string, OpponentEloCacheEntry>(
+                        _opponentEloCache,
+                        StringComparer.OrdinalIgnoreCase)
+            };
+
+        var json =
+            JsonSerializer.Serialize(
+                document,
+                _cacheJsonOptions);
+
+        await File.WriteAllTextAsync(
+            OpponentEloCacheFile,
+            json,
+            cancellationToken);
+
+        _opponentEloCacheDirty = false;
+
+        Console.WriteLine(
+            $"💾 Motståndar-ELO cache sparad: {_opponentEloCache.Count} spelare.");
     }
 
     private static int GetRoundCount(
@@ -571,5 +953,26 @@ public sealed class FaceitAdvancedStatsService
         public int UtilityCount { get; set; }
 
         public double UtilityDamage { get; set; }
+    }
+
+    private sealed class OpponentEloCacheDocument
+    {
+        public OpponentEloCacheDocument()
+        {
+        }
+
+        public Dictionary<string, OpponentEloCacheEntry> Players { get; set; } =
+            new(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private sealed class OpponentEloCacheEntry
+    {
+        public OpponentEloCacheEntry()
+        {
+        }
+
+        public int Elo { get; set; }
+
+        public DateTimeOffset UpdatedAtUtc { get; set; }
     }
 }
