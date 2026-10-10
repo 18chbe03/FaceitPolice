@@ -65,7 +65,9 @@ public sealed class DiscordClient
             messageId:
                 messageId,
             cancellationToken:
-                cancellationToken);
+                cancellationToken,
+            useRankingFields:
+                true);
     }
 
     // --------------------------------------------------
@@ -131,13 +133,18 @@ public sealed class DiscordClient
         string content,
         string messageContent,
         string? messageId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool useRankingFields = false)
     {
         var embeds =
-            BuildEmbeds(
-                title,
-                continuationTitle,
-                content);
+            useRankingFields
+                ? BuildRankingEmbeds(
+                    title,
+                    content)
+                : BuildEmbeds(
+                    title,
+                    continuationTitle,
+                    content);
 
         if (string.IsNullOrWhiteSpace(
                 messageId))
@@ -507,6 +514,150 @@ public sealed class DiscordClient
     // --------------------------------------------------
     // EMBEDS
     // --------------------------------------------------
+
+    private static object[] BuildRankingEmbeds(
+        string title,
+        string content)
+    {
+        var normalized =
+            content
+                .Replace("\r\n", "\n")
+                .Trim();
+
+        // Normal ranking output is built as:
+        // legend + blank line + one block per player.
+        // Putting each player in its own embed field avoids Discord cutting
+        // the description in the middle of the last players when the ranking grows.
+        if (!normalized.StartsWith("*📊", StringComparison.Ordinal))
+        {
+            return BuildEmbeds(
+                title,
+                $"{title} — FORTSÄTTNING",
+                content);
+        }
+
+        var blocks =
+            normalized.Split(
+                "\n\n",
+                StringSplitOptions.RemoveEmptyEntries |
+                StringSplitOptions.TrimEntries);
+
+        if (blocks.Length == 0)
+        {
+            return BuildEmbeds(
+                title,
+                $"{title} — FORTSÄTTNING",
+                content);
+        }
+
+        var description =
+            blocks[0];
+
+        var fields =
+            new List<object>();
+
+        foreach (var block in blocks.Skip(1))
+        {
+            var lines =
+                block.Split(
+                    '\n',
+                    StringSplitOptions.RemoveEmptyEntries |
+                    StringSplitOptions.TrimEntries);
+
+            if (lines.Length == 0)
+            {
+                continue;
+            }
+
+            if (lines[0].StartsWith("🚫", StringComparison.Ordinal))
+            {
+                var excludedText =
+                    lines[0]
+                        .Replace("🚫 **Ej med:**", "", StringComparison.Ordinal)
+                        .Trim();
+
+                fields.Add(
+                    new
+                    {
+                        name = "🚫 Ej med",
+                        value = LimitDiscordFieldValue(excludedText),
+                        inline = false
+                    });
+
+                continue;
+            }
+
+            var name =
+                LimitDiscordFieldName(
+                    lines[0]);
+
+            var valueLines =
+                lines
+                    .Skip(1)
+                    .Select(line =>
+                        line.StartsWith("> ", StringComparison.Ordinal)
+                            ? line[2..]
+                            : line);
+
+            var value =
+                string.Join(
+                    "\n",
+                    valueLines);
+
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                value = "—";
+            }
+
+            fields.Add(
+                new
+                {
+                    name,
+                    value = LimitDiscordFieldValue(value),
+                    inline = false
+                });
+        }
+
+        // Discord allows max 25 fields per embed. We are well below that
+        // with the current player group, but keep a defensive fallback.
+        if (fields.Count > 25)
+        {
+            return BuildEmbeds(
+                title,
+                $"{title} — FORTSÄTTNING",
+                content);
+        }
+
+        return new object[]
+        {
+            new
+            {
+                title,
+                description,
+                fields = fields.ToArray()
+            }
+        };
+    }
+
+    private static string LimitDiscordFieldName(
+        string value)
+    {
+        const int maxLength = 256;
+
+        return value.Length <= maxLength
+            ? value
+            : value[..maxLength];
+    }
+
+    private static string LimitDiscordFieldValue(
+        string value)
+    {
+        const int maxLength = 1024;
+
+        return value.Length <= maxLength
+            ? value
+            : value[..maxLength];
+    }
 
     private static object[] BuildEmbeds(
         string title,
