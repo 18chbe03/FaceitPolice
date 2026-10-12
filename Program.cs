@@ -3994,7 +3994,7 @@ static string BuildMapStatistics(
 
         sb.AppendLine(
 
-            "Ingen karta har minst 10 unika matcher ännu.");
+            "Ingen karta har minst 5 unika matcher ännu.");
 
 
 
@@ -4174,7 +4174,7 @@ static string BuildMapStatistics(
 
     sb.AppendLine(
 
-        "*Endast kartor med minst 10 unika matcher visas.*");
+        "*Endast kartor med minst 5 unika matcher visas.*");
 
 
 
