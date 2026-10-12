@@ -5,7 +5,7 @@ namespace FaceitPolice.Services;
 
 public sealed class MapStatsService
 {
-    private const int MinimumUniqueMatches = 10;
+    private const int MinimumUniqueMatches = 5;
 
     public IReadOnlyList<MapStatistics> Calculate(
         IEnumerable<FaceitStatsResponse> playerStats)
