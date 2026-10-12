@@ -3514,6 +3514,7 @@ static string BuildAwards(
             sb,
             "🎯",
             "PANNBENSKIRURGEN",
+            $"*Aim small, miss small*\n" +
             $"{EscapeDiscordMarkdown(aimKing.Name)} — {aimKing.HeadshotPercentage:0}% HS");
 
         AppendAward(
@@ -3594,7 +3595,8 @@ static string BuildAwards(
         AppendAward(
             sb,
             "🎮",
-            "ARBETSLÖSA KRIGAREN",
+            "THE BABA YAGA",
+            $"*A man of focus, commitment and sheer will*\n" +
             $"{EscapeDiscordMarkdown(mostActive.Name)} — " +
             $"{mostActive.ActivityMatches} matcher senaste {activityDays} dagarna");
 
