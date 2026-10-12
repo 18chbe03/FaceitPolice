@@ -29,7 +29,7 @@ public sealed class MapStatsService
                 StringComparer.OrdinalIgnoreCase)
             .Select(CalculateMap)
 
-            // Minst 10 UNIKA matcher på kartan.
+            // Minsta antal UNIKA matcher på kartan.
             .Where(x =>
                 x.UniqueMatches >= MinimumUniqueMatches)
 
@@ -57,21 +57,29 @@ public sealed class MapStatsService
         var appearances =
             rows.Count;
 
-        var uniqueMatches =
+        // Kartans winrate ska räknas per unik match, inte per spelarresultat.
+        // Om fyra gruppspelare finns i samma match ska vinsten alltså bara
+        // räknas en gång. Övrig statistik (K/D, ADR osv.) räknas fortfarande
+        // på samtliga spelares prestationer på kartan.
+        var uniqueMatchRows =
             rows
                 .Where(x =>
                     !string.IsNullOrWhiteSpace(x.MatchId))
-                .Select(x => x.MatchId)
-                .Distinct(
+                .GroupBy(
+                    x => x.MatchId,
                     StringComparer.OrdinalIgnoreCase)
-                .Count();
+                .Select(x => x.First())
+                .ToList();
+
+        var uniqueMatches =
+            uniqueMatchRows.Count;
 
         var wins =
-            rows.Count(
+            uniqueMatchRows.Count(
                 x => x.Result == "1");
 
         var losses =
-            appearances - wins;
+            uniqueMatches - wins;
 
         var kills =
             rows.Sum(
@@ -102,10 +110,10 @@ public sealed class MapStatsService
                 x => ToLong(x.Damage));
 
         var winRate =
-            appearances == 0
+            uniqueMatches == 0
                 ? 0
                 : (double)wins /
-                  appearances * 100;
+                  uniqueMatches * 100;
 
         var kd =
             deaths == 0
