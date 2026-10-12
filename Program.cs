@@ -986,6 +986,12 @@ foreach (var player in allPlayers)
 
 
 
+    player.SniperKillsPerMatch =
+
+        advanced.AverageSniperKillsPerMatch;
+
+
+
     player.FirstKillsPerMatch =
 
         advanced.AverageFirstKillsPerMatch;
@@ -3570,7 +3576,7 @@ static string BuildAwards(
         AppendAward(
             sb,
             "🙈",
-            "LÅG HS%, AWP MISSBRUK?",
+            "LÅG HS%",
             $"{EscapeDiscordMarkdown(lowestHs.Name)} — {lowestHs.HeadshotPercentage:0}% HS");
 
         AppendAward(
@@ -3628,6 +3634,10 @@ static string BuildAwards(
             var pistolPig =
                 advancedAwardPlayers
                     .MaxBy(x => x.PistolKillsPerMatch)!;
+
+            var awpPig =
+                advancedAwardPlayers
+                    .MaxBy(x => x.SniperKillsPerMatch)!;
 
             var doorMat =
                 advancedAwardPlayers
@@ -3714,6 +3724,13 @@ static string BuildAwards(
                 "PISTOLGRISEN",
                 $"{EscapeDiscordMarkdown(pistolPig.Name)} — " +
                 $"{pistolPig.PistolKillsPerMatch:0.00} pistol kills/match");
+
+            AppendAward(
+                sb,
+                "🔭",
+                "AWP-GRISEN",
+                $"{EscapeDiscordMarkdown(awpPig.Name)} — " +
+                $"{awpPig.SniperKillsPerMatch:0.00} sniper kills/match");
 
             AppendAward(
                 sb,
@@ -4670,6 +4687,10 @@ internal sealed class PlayerLeaderboardEntry
 
 
     public double PistolKillsPerMatch { get; set; }
+
+
+
+    public double SniperKillsPerMatch { get; set; }
 
 
 

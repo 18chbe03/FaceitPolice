@@ -31,6 +31,8 @@ public sealed class FaceitAdvancedPlayerStats
 
     public int TotalPistolKills { get; set; }
 
+    public int TotalSniperKills { get; set; }
+
     public int TotalOneVsOneAttempts { get; set; }
 
     public int TotalOneVsOneWins { get; set; }
@@ -84,6 +86,11 @@ public sealed class FaceitAdvancedPlayerStats
         AnalyzedMatches == 0
             ? 0
             : (double)TotalPistolKills / AnalyzedMatches;
+
+    public double AverageSniperKillsPerMatch =>
+        AnalyzedMatches == 0
+            ? 0
+            : (double)TotalSniperKills / AnalyzedMatches;
 
     public double? OneVsOneWinPercentage =>
         TotalOneVsOneAttempts == 0
