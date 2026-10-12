@@ -3508,6 +3508,7 @@ static string BuildAwards(
             sb,
             "📈",
             "GRÄSMATTAN",
+            $"*Are you not entertained?*\n" +
             $"{EscapeDiscordMarkdown(bestWinRate.Name)} — {bestWinRate.WinRate:0}% vinst");
 
         AppendAward(
