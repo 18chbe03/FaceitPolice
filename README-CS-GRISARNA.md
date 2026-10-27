@@ -252,7 +252,7 @@ Underdog-bonus räknas per kvalificerad gruppmatch när det finns motståndar-EL
 
 Entry-impact består av 70 % entry success och 30 % entry kills per match. MVP/match visas på vinnaren men påverkar inte ratingen.
 
-Vid månadsavslut publiceras vinnaren med statistik och en slumpad positiv kommentar. Tvåan och trean får varsin slumpad roast. Om `chrillebille` kommer på pallen används en separat pool med 12 specialroasts: vid seger får han dessutom en vanlig vinnarhyllning. Det finns 12 kommentarer per kategori (48 totalt). Kommentarerna är färdigskrivna, AI-genererade texter som slumpas lokalt – inget AI-anrop görs under körning. I slutet av Discord-meddelandet visas AI-notisen och därefter `🐷 Grisjuryn har talat. Beslutet kan inte överklagas.`
+Vid månadsavslut publiceras vinnaren med statistik och en slumpad positiv kommentar. Tvåan och trean får varsin slumpad roast. Om `chrillebille` kommer på pallen används en separat pool med 12 specialroasts: vid seger får han dessutom en vanlig vinnarhyllning. Det finns 12 möjliga vinnarhyllningar per ELO-läge (+100 eller mer, 0–99 eller okänt, samt negativ ELO), och fortfarande 12 vardera för tvåan, trean och chrillebille (72 texter totalt). Vinnarhyllningarna anpassas efter ELO-förändringen så att ingen påstås ha klättrat när ELO minskat. Kommentarerna är färdigskrivna, AI-genererade texter som slumpas lokalt – inget AI-anrop görs under körning. I slutet av Discord-meddelandet visas AI-notisen och därefter `🐷 Grisjuryn har talat. Beslutet kan inte överklagas.`
 
 ### Bara ett meddelande per månad
 

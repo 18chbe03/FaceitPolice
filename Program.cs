@@ -2835,7 +2835,7 @@ static string BuildMonthlyPlayerBoard(
     sb.AppendLine($"### ⭐ Månadsrating: {winner.Score:0.0}/100 ⭐");
     sb.AppendLine();
     sb.AppendLine("👑 **Grisjuryns hyllning**");
-    sb.AppendLine($"*{PickMonthlyWinnerComment(winner.Name)}*");
+    sb.AppendLine($"*{PickMonthlyWinnerComment(winner.Name, winner.EloDelta)}*");
 
     // Chrille hyllas fortfarande som vinnare men får dessutom sin separata specialroast.
     if (IsChrillebille(winner.Name))
@@ -2891,23 +2891,66 @@ static string PickMonthlyComment(string[] comments, string name) =>
     comments[Random.Shared.Next(comments.Length)]
         .Replace("{player}", EscapeDiscordMarkdown(name), StringComparison.Ordinal);
 
-static string PickMonthlyWinnerComment(string name)
+// Vinnarkommentaren måste stämma med månadens faktiska ELO-utveckling.
+// Varje ELO-läge har 12 möjliga hyllningar så variationen inte försvinner.
+// Okänd ELO-förändring använder neutrala kommentarer och blir aldrig en påstådd klättring.
+static string PickMonthlyWinnerComment(string name, int? eloDelta)
 {
-    string[] comments =
+    string[] bigClimbComments =
     {
         "👑 En månad, en kung, en jävla massa ELO. {player} har visat var skåpet ska stå. Resten får börja träna.",
         "🚀 {player} har inte spelat FACEIT den här månaden. Han har bedrivit organiserad ELO-insamling.",
-        "🐐 Vissa spelar för att vinna. {player} spelar för att påminna resten om vem som bestämmer.",
-        "🔥 Motståndarna försökte. Lagkamraterna tittade på. {player} levererade. Precis som vanligt.",
-        "💪 Det snackades mycket i Discord. {player} lät statistiken sköta snacket. Kungligt.",
-        "🦍 Det finns grisar, och så finns det {player}. En helt annan viktklass.",
+        "🐐 Vissa spelar för att vinna. {player} har dessutom klättrat rakt upp på ELO-stegen.",
+        "🔥 {player} har gjort månaden till en enda lång klättring. Resten får försöka hänga med.",
+        "💪 Det snackades mycket i Discord. {player} lät ELO-kurvan sköta snacket. Kungligt.",
+        "🦍 Det finns grisar, och så finns det {player}. En helt annan ELO-viktklass efter den här månaden.",
         "📈 {player}s ELO-kurva ser ut som en börsraket. Resten av servern borde investera i aim-träning.",
-        "🎯 Vissa skyller på teammates, ping och tickrate. {player} samlar bara vinster och låter resultaten tala.",
-        "🏆 Grisjuryn har granskat siffrorna. Det finns inget att diskutera. {player} är månadens självklara etta.",
-        "🐷 En sann gris klagar inte på matchmaking. Han erövrar den. {player} har visat vägen.",
-        "💀 När {player} ansluter till servern börjar motståndarna redan fundera på nästa match.",
-        "⭐ En månad som kommer gå till historien. {player} har satt ribban. Resten får försöka nå upp."
+        "🎯 Medan andra letade ursäkter letade {player} efter nästa ELO-vinst. Respekt.",
+        "🏆 Grisjuryn har granskat klättringen. Det finns inget att diskutera. {player} är månadens etta.",
+        "🐷 En sann gris klagar inte på matchmaking. {player} har klättrat förbi den.",
+        "💀 När {player} öppnar FACEIT är det ELO-poängen som får börja springa.",
+        "⭐ En klättring som kommer gå till grishistorien. {player} har satt ribban. Resten får försöka nå upp."
     };
+
+    string[] steadyClimbComments =
+    {
+        "👑 {player} tog månadens krona med prestationerna på servern. En värdig kung av grisarna.",
+        "🐐 Vissa jagar snygga siffror. {player} levererade den bästa helheten. Kungligt.",
+        "🔥 Det behövdes inga rekordkurvor. {player} var helt enkelt månadens starkaste gris.",
+        "💪 Det snackades mycket i Discord. {player} lät statistiken sköta snacket. Respekt.",
+        "🦍 Det finns grisar, och så finns det {player}. En helt annan viktklass den här månaden.",
+        "🎯 Det är inte en enda siffra som vinner priset. {player} satte ihop en hel månad av klass.",
+        "🏆 Grisjuryn har granskat siffrorna. Det finns inget att diskutera. {player} är månadens etta.",
+        "🐷 Månadens tron kräver mer än tur. {player} gjorde jobbet när det gällde.",
+        "⭐ {player} har satt ribban för nästa månad. Resten får försöka nå upp.",
+        "🚀 Ingen behövde gissa vem som levererade. {player} lät resultaten tala.",
+        "👑 Många ville ha kronan, men bara {player} hade månaden som krävdes.",
+        "💥 Match efter match visade {player} varför månadens titel landade just här."
+    };
+
+    string[] negativeEloComments =
+    {
+        "👑 ELO-kurvan gick åt fel håll, men {player} vann ändå månadens spelare på sina prestationer. Respekt.",
+        "🐐 Minus i ELO, plus i grisjuryns protokoll. {player} levererade när det gällde.",
+        "🔥 Alla månader går inte uppåt på FACEIT. Ändå var {player} månadens starkaste gris.",
+        "💪 ELO-siffran berättar inte hela historien. {player} visade det bättre än någon annan.",
+        "🎯 Trots en tuff ELO-månad gick det inte att blunda för {player}s spel. Välförtjänt krona.",
+        "🏆 Grisjuryn tittade på hela månaden, inte bara ELO-kurvan. {player} tog hem titeln.",
+        "🐷 ELO kan försvinna. Klass består. Den här månaden tillhörde {player}.",
+        "⭐ Motgång i ELO-tabellen stoppade inte {player} från att toppa månadsrankingen.",
+        "💥 Månadens spelare handlar om mer än ELO. {player} levererade beviset.",
+        "👑 Kronan sitter där den ska. {player} visade att även en tung ELO-månad kan innehålla stor CS.",
+        "🦍 När ELO inte ville samarbeta lät {player} resten av statistiken tala. Kungligt.",
+        "🚀 Den här månaden var ingen ELO-raket, men {player} var ändå grisarnas nummer ett."
+    };
+
+    var comments = eloDelta switch
+    {
+        >= 100 => bigClimbComments,
+        < 0 => negativeEloComments,
+        _ => steadyClimbComments // 0–99 eller saknad ELO-historik.
+    };
+
     return PickMonthlyComment(comments, name);
 }
 
