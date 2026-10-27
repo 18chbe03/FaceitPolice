@@ -167,9 +167,12 @@ public sealed class EloHistoryService
             _history.Players[nickname] = snapshots;
         }
 
-        var today =
-            DateOnly.FromDateTime(
-                DateTime.UtcNow);
+        // Månadsfönstret använder svensk kalenderdag. Vid månadsskiftet
+        // kan UTC fortfarande vara föregående månad.
+        var swedishNow = TimeZoneInfo.ConvertTime(
+            DateTimeOffset.UtcNow,
+            GetSwedishTimeZone());
+        var today = DateOnly.FromDateTime(swedishNow.DateTime);
 
         var existing =
             snapshots.FirstOrDefault(
@@ -193,6 +196,25 @@ public sealed class EloHistoryService
 
         snapshots.RemoveAll(
             x => x.Date < cutoff);
+    }
+
+    private static TimeZoneInfo GetSwedishTimeZone()
+    {
+        try
+        {
+            return TimeZoneInfo.FindSystemTimeZoneById("Europe/Stockholm");
+        }
+        catch (TimeZoneNotFoundException)
+        {
+            try
+            {
+                return TimeZoneInfo.FindSystemTimeZoneById("W. Europe Standard Time");
+            }
+            catch (TimeZoneNotFoundException)
+            {
+                return TimeZoneInfo.Utc;
+            }
+        }
     }
 
     public async Task SaveAsync()

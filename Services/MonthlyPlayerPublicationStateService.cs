@@ -18,7 +18,10 @@ public sealed class MonthlyPlayerPublicationStateService
     {
         if (!File.Exists(StateFile))
         {
-            return new MonthlyPlayerPublicationState();
+            throw new FileNotFoundException(
+                "Månadsstate saknas. Återställ den versionshanterade filen " +
+                "history/monthly-player-state.json innan boten startas.",
+                StateFile);
         }
 
         try
@@ -28,14 +31,21 @@ public sealed class MonthlyPlayerPublicationStateService
                     StateFile,
                     cancellationToken);
 
-            return JsonSerializer.Deserialize<MonthlyPlayerPublicationState>(
-                       json,
-                       _jsonOptions)
-                   ?? new MonthlyPlayerPublicationState();
+            var state = JsonSerializer.Deserialize<MonthlyPlayerPublicationState>(
+                json, _jsonOptions)
+                ?? throw new JsonException("Månadsstate är tom eller ogiltig.");
+            if (string.IsNullOrWhiteSpace(state.TrackingStartedMonth) ||
+                state.PublishedMonths is null)
+                throw new JsonException("TrackingStartedMonth/PublishedMonths saknas.");
+            return state;
         }
-        catch
+        catch (Exception ex) when (ex is IOException ||
+                                   ex is UnauthorizedAccessException ||
+                                   ex is JsonException)
         {
-            return new MonthlyPlayerPublicationState();
+            throw new InvalidOperationException(
+                $"Månadsstate ({StateFile}) kunde inte läsas. " +
+                "Stoppar körningen för att inte förlora publiceringshistorik.", ex);
         }
     }
 

@@ -262,13 +262,15 @@ Appen sparar publicerade månader i:
 history/monthly-player-state.json
 ```
 
-Första gången funktionen körs sparas månaden då spårningen startade. Den publicerar alltså inte gamla månader bakåt i tiden. När nästa månad börjar tittar den på föregående, avslutade månad.
+Filen följer med i repot och innehåller `TrackingStartedMonth: 2026-10`. Den måste finnas kvar – vid saknad/korrupt state stoppas körningen med fel, så oktober inte tappas bort. Appen börjar publicera tidigast **03:00 svensk tid den 1 november** för att ge FACEIT tid att leverera de sista matcherna. Om en månad missas försöker appen publicera den äldsta opublicerade månaden vid nästa körning.
 
 Efter att Discord-meddelandet har skapats läggs exempelvis `2026-10` i `PublishedMonths`. På alla senare körningar ser appen att oktober redan är publicerad och hoppar över den. Workflowen committar state-filen tillsammans med ELO-historiken, så skyddet finns kvar mellan GitHub Actions-körningar.
 
 Det behövs ingen `MONTHLY_PLAYER_MESSAGE_ID`, eftersom varje månadspris ska ligga kvar som ett eget historiskt meddelande i kanalen.
 
-Om Discord-anropet misslyckas markeras månaden inte som publicerad, så nästa körning kan försöka igen.
+Om FACEIT-data för en spelare saknas eller mindre än 70 % av månadsfinalisternas advanced-matcher kan analyseras avbryts publiceringen och nästa schemakörning försöker igen. Om Discord-anropet misslyckas markeras månaden inte som publicerad. Workflowen försöker pusha state till GitHub upp till fem gånger och sparar JSON-filerna som artefakt om körningen misslyckas. Eftersom Discord-publicering och Git-commit inte är en atomär transaktion kan dubbletter fortfarande inträffa om Discord tog emot meddelandet men Git aldrig sparade månadsstatus. Kontrollera därför Discord och workflowloggarna vid misslyckade körningar på månadsskiftet.
+
+För kompileringstest utan API-nyckel eller Discord-publicering: **Actions → Validera FACEIT-kod (utan Discord) → Run workflow**. Den äldre test-schedulern är ändrad till manuell körning så den inte kör 288 meningslösa testjobb per dygn.
 
 
 

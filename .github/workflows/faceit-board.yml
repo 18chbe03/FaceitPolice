@@ -32,7 +32,7 @@ jobs:
         run: dotnet build --configuration Release --no-restore
 
       - name: Kör GRIS-tavlan
-        run: dotnet run --configuration Release
+        run: dotnet run --configuration Release --no-build
         env:
           FACEIT_API_KEY: ${{ secrets.FACEIT_API_KEY }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
@@ -55,6 +55,24 @@ jobs:
 
           if ! git diff --cached --quiet; then
             git commit -m "Uppdatera FACEIT historik och cache"
-            git pull --rebase origin main
-            git push origin main
+            for attempt in 1 2 3 4 5; do
+              if git pull --rebase origin main && git push origin main; then
+                echo "✅ Historik och månadsstate sparade i main."
+                exit 0
+              fi
+              echo "⚠️ Git push misslyckades ($attempt/5). Försöker igen..."
+              git rebase --abort || true
+              sleep $((attempt * 3))
+            done
+            echo "❌ Kunde inte spara state. Kontrollera manuellt innan nästa publicering."
+            exit 1
           fi
+
+      - name: Spara state som felsökningsartefakt om körningen misslyckas
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: faceit-history-failed-${{ github.run_id }}
+          path: history/*.json
+          if-no-files-found: warn
+          retention-days: 14

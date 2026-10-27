@@ -103,9 +103,8 @@ public sealed class FaceitClient
                         nickname,
                         StringComparison.OrdinalIgnoreCase));
 
-        match ??=
-            result?.Items.FirstOrDefault();
-
+        // Välj aldrig en ungefärlig träff. Fel FACEIT-konto skulle kunna
+        // få en annan spelares statistik och påverka månadspriset.
         if (match is null)
         {
             Console.WriteLine(

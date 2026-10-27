@@ -236,6 +236,15 @@ var currentMonthKey =
 
     GetCurrentMonthKey();
 
+// Sätt tydlig felstatus innan några Discord-anrop om månadskanalen saknas.
+if (monthlyDiscordClient is null &&
+    string.CompareOrdinal(currentMonthKey, "2026-11") >= 0)
+{
+    throw new InvalidOperationException(
+        "MONTHLY_DISCORD_WEBHOOK_URL saknas. Konfigurera secret i GitHub Actions " +
+        "så månadspriset kan publiceras.");
+}
+
 
 
 if (string.IsNullOrWhiteSpace(
@@ -276,23 +285,42 @@ var currentMonthWindow =
 
 
 
-var shouldPublishMonthlyPlayer =
+// FACEIT:s sista matcher behöver hinna bli tillgängliga innan resultatet låses.
+// Tidigast 03:00 svensk tid den första i månaden, även vid sommar-/vintertid.
+var currentLocalTime = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, GetSwedenTimeZone());
+var publicationReady =
+    currentLocalTime.Day > 1 || currentLocalTime.TimeOfDay >= TimeSpan.FromHours(3);
 
-    monthlyDiscordClient is not null &&
+// Kör ikapp den äldsta missade månaden, även om GitHub Actions varit nere
+// över flera månadsskiften. Högst en månadsannons per körning.
+MonthWindow? pendingMonthlyPublication = null;
+if (monthlyDiscordClient is not null && publicationReady)
+{
+    if (!DateOnly.TryParseExact(
+            monthlyPublicationState.TrackingStartedMonth + "-01",
+            "yyyy-MM-dd",
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.None,
+            out var trackingStart))
+    {
+        throw new InvalidOperationException(
+            "TrackingStartedMonth i history/monthly-player-state.json är ogiltigt.");
+    }
 
-    string.CompareOrdinal(
+    for (var monthStart = trackingStart;
+         monthStart <= previousCompletedMonth.StartDate;
+         monthStart = monthStart.AddMonths(1))
+    {
+        var monthKey = monthStart.ToString("yyyy-MM", CultureInfo.InvariantCulture);
+        if (monthlyPublicationState.PublishedMonths.Contains(
+                monthKey, StringComparer.OrdinalIgnoreCase))
+            continue;
 
-        previousCompletedMonth.Key,
-
-        monthlyPublicationState.TrackingStartedMonth) >= 0 &&
-
-    !monthlyPublicationState.PublishedMonths.Contains(
-
-        previousCompletedMonth.Key,
-
-        StringComparer.OrdinalIgnoreCase);
-
-
+        pendingMonthlyPublication =
+            GetPreviousCompletedMonthWindow(monthStart.AddMonths(1));
+        break;
+    }
+}
 
 // Env vinner över state.
 // State används endast som fallback.
@@ -337,19 +365,16 @@ var nicknames =
 
 
 
-MonthWindow? monthToPublish =
-
-    shouldPublishMonthlyPlayer
-
-        ? previousCompletedMonth
-
-        : null;
+MonthWindow? monthToPublish = pendingMonthlyPublication;
 
 
 
 var fetchedPlayers =
 
     new List<FetchedPlayerData>();
+
+// Publicera aldrig ett månadspris baserat på en ofullständig FACEIT-hämtning.
+var monthlyFetchFailures = new List<string>();
 
 
 
@@ -395,7 +420,8 @@ foreach (var nickname in nicknames)
 
                 $"Ingen FACEIT-spelare hittades för {nickname}.");
 
-
+            if (monthToPublish is not null)
+                monthlyFetchFailures.Add($"{nickname}: spelaren hittades inte");
 
             continue;
 
@@ -415,7 +441,8 @@ foreach (var nickname in nicknames)
 
                 $"{nickname} saknar CS2-data.");
 
-
+            if (monthToPublish is not null)
+                monthlyFetchFailures.Add($"{nickname}: CS2-data saknas");
 
             continue;
 
@@ -468,6 +495,7 @@ foreach (var nickname in nicknames)
                 Console.WriteLine(
 
                     $"⚠️ Månadsstatistik saknas för {nickname}: {ex.Message}");
+                monthlyFetchFailures.Add($"{nickname}: månadsstatistik kunde inte hämtas ({ex.Message})");
 
             }
 
@@ -525,6 +553,9 @@ foreach (var nickname in nicknames)
 
             $"FEL för {nickname}: {ex.Message}");
 
+        if (monthToPublish is not null)
+            monthlyFetchFailures.Add($"{nickname}: {ex.Message}");
+
     }
 
 }
@@ -539,6 +570,14 @@ if (fetchedPlayers.Count == 0)
 
         "Inga FACEIT-spelare kunde hämtas.");
 
+}
+
+// Nya körningar försöker igen automatiskt. Månaden förblir opublicerad.
+if (monthToPublish is not null && monthlyFetchFailures.Count > 0)
+{
+    throw new InvalidOperationException(
+        $"Avbryter publicering av {monthToPublish.Label}: ofullständig spelarlista/" +
+        $"månadsstatistik: {string.Join("; ", monthlyFetchFailures)}");
 }
 
 
@@ -1666,6 +1705,20 @@ if (monthToPublish is not null)
 
 
 
+        // Vi behöver tillräckligt täckande matchdata för en rättvis poängberäkning.
+        // För få advanced-matcher ger fel entry- och motståndarbonus.
+        foreach (var input in monthlyAdvancedInputs)
+        {
+            if (!monthlyAdvancedStatsByPlayerId.TryGetValue(input.PlayerId, out var coverage) ||
+                coverage.AnalyzedMatches < Math.Ceiling(input.MatchIds.Count * 0.70))
+            {
+                throw new InvalidOperationException(
+                    $"Avbryter månadspris: otillräcklig advanced-statistik för {input.Name} " +
+                    $"({coverage?.AnalyzedMatches ?? 0}/{input.MatchIds.Count}). " +
+                    "Nästa schemakörning gör ett nytt försök.");
+            }
+        }
+
         foreach (var player in monthlyPlayers)
 
         {
@@ -2179,7 +2232,7 @@ else if (monthlyDiscordClient is null)
 
     Console.WriteLine(
 
-        "ℹ️ MONTHLY_DISCORD_WEBHOOK_URL saknas. Månadens spelare hoppas över.");
+        "⚠️ MONTHLY_DISCORD_WEBHOOK_URL saknas. Månadens spelare kan inte publiceras.");
 
 }
 
@@ -2462,7 +2515,7 @@ static DateTimeOffset? ParseMatchFinishedAt(
 
 
 
-static MonthWindow GetPreviousCompletedMonthWindow()
+static MonthWindow GetPreviousCompletedMonthWindow(DateOnly? currentMonthStartOverride = null)
 
 {
 
@@ -2490,21 +2543,8 @@ static MonthWindow GetPreviousCompletedMonthWindow()
 
     var currentMonthStartLocal =
 
-        new DateTime(
-
-            localNow.Year,
-
-            localNow.Month,
-
-            1,
-
-            0,
-
-            0,
-
-            0,
-
-            DateTimeKind.Unspecified);
+        currentMonthStartOverride?.ToDateTime(TimeOnly.MinValue, DateTimeKind.Unspecified)
+        ?? new DateTime(localNow.Year, localNow.Month, 1, 0, 0, 0, DateTimeKind.Unspecified);
 
 
 
