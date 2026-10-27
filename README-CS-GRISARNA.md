@@ -234,18 +234,19 @@ Månadens spelare ligger i en egen Discord-kanal och använder `MONTHLY_DISCORD_
 
 Det är ett månadspris, inte en live-tavla. När en kalendermånad är slut räknar appen på **alla gruppmatcher från den avslutade månaden**. Minst **30 gruppmatcher** krävs för att kunna vinna.
 
-Ratingen är 0–100 och består av **90 baspoäng + upp till 10 bonuspoäng**:
+Ratingen är 0–100 och består av **80 baspoäng + upp till 20 bonuspoäng**:
 
-- 20 poäng K/D
+- **35 poäng ELO-klättring under månaden**
 - 20 poäng ADR
 - 15 poäng winrate
-- **25 poäng ELO-klättring under månaden** (tidigare 15)
 - 10 poäng entry-impact
-- **Upp till 10 poäng underdog-bonus** för bra spel mot starkare motstånd
+- **Upp till 20 poäng underdog-bonus** för bra spel mot starkare motstånd
+
+**K/D ingår inte alls i poängräkningen.** K/D visas fortfarande som en vanlig statistikrad, men används varken i grundpoängen eller för att kvalificera sig till underdog-bonusen.
 
 ELO-formen ger 0 poäng vid -100 ELO och maximal utdelning vid +150 ELO. Vid saknad historik används neutral ELO-poäng (40 % av ELO-delen). Hög nuvarande ELO ger **inte** poäng i sig.
 
-Underdog-bonus räknas per kvalificerad gruppmatch när det finns motståndar-ELO. Det krävs att **motståndarlagets snitt ligger minst 100 ELO över spelarens uppskattade månads-ELO**, samtidigt som spelaren når **minst 1,0 K/D och 75 ADR i matchen**. Starkare motstånd samt högre K/D/ADR ger mer bonus. Antalet kvalificerade prestationer skalar bonusen upp till full effekt vid åtta matcher, så en enstaka lyckträff inte dominerar månaden. Bonusen visas i liveprognosen och på vinnartavlan.
+Underdog-bonus räknas per kvalificerad gruppmatch när det finns motståndar-ELO. För att en match ska räknas krävs att **motståndarlagets snitt ligger minst 100 ELO över spelarens uppskattade månads-ELO**, samtidigt som spelaren når **minst 75 ADR och minst 90 % av sin egen månads-ADR** i den matchen. Starkare motstånd (upp till +400 ELO i poängmodellen), högre ADR och större överprestation jämfört med den egna nivån ger mer bonus. Antalet kvalificerade prestationer skalar bonusen upp till full möjlig effekt vid åtta matcher, så en enstaka lyckträff inte dominerar månaden. Bonusen visas både i liveprognosen och på vinnartavlan.
 
 **Begränsning:** FACEIT-uppslaget ger motståndarnas *aktuella* ELO, inte deras ELO när matchen spelades. Egen ELO approximeras som mittvärdet mellan månadens start- och slutvärde. Matchup-bonusen är därför en uppskattning. Om motståndar-ELO inte kan hämtas delas inga bonuspoäng ut för den matchen. ELO-förändringen är kontots förändring, inte bara ELO från gruppmatcherna.
 

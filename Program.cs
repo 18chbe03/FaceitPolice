@@ -2630,9 +2630,10 @@ static TimeZoneInfo GetSwedenTimeZone()
 
 
 
-// Matcher mot starkare motstånd kan ge upp till 10 bonuspoäng.
+// Matcher mot starkare motstånd kan ge upp till 20 bonuspoäng.
 // FACEIT ger aktuell (inte historisk) ELO för motståndarna, så jämförelsen
 // med spelarens ungefärliga månads-ELO är en uppskattning.
+// K/D används inte i bonusen eller i månadens poängmodell.
 static void CalculateMonthlyUnderdogBonus(
     MonthlyPlayerEntry player,
     FaceitStatsResponse groupStats,
@@ -2651,6 +2652,11 @@ static void CalculateMonthlyUnderdogBonus(
     // Mittvärdet minskar snedvridningen när spelaren har klättrat under månaden.
     var estimatedOwnElo =
         player.EloAtMonthEnd.Value - player.EloDelta.GetValueOrDefault() / 2.0;
+
+    // Jämför även med spelarens egen månads-ADR så att en bra match
+    // bedöms i relation till spelarens normala nivå, utan K/D-krav.
+    var referenceAdr =
+        Math.Max(player.Adr, 1.0);
 
     var seenMatchIds =
         new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -2674,35 +2680,36 @@ static void CalculateMonthlyUnderdogBonus(
 
         var eloDifference = opponentElo - estimatedOwnElo;
 
-        // Minst +100 ELO i motståndarlaget för att räknas som underdog.
+        // Motståndet måste ligga minst 100 ELO högre i genomsnitt.
         if (eloDifference < 100)
         {
             continue;
         }
 
-        var kills = ToInt(match.Kills);
-        var deaths = ToInt(match.Deaths);
-        var kd = deaths == 0 ? kills : (double)kills / deaths;
         var adr = ToDouble(match.Adr);
+        var relativeAdr = adr / referenceAdr;
 
-        // Att bara möta bättre spelare ger inga bonuspoäng.
-        if (kd < 1.0 || adr < 75)
+        // Minst 75 ADR och minst 90 % av spelarens egen månadsnivå.
+        // Inga krav på K/D, kills eller deaths.
+        if (adr < 75 || relativeAdr < 0.90)
         {
             continue;
         }
 
         player.UnderdogPerformances++;
 
+        // Svårare motstånd ger större utdelning, upp till +400 ELO.
         var difficulty =
             0.25 + 0.75 * NormalizeAbsolute(
                 eloDifference,
                 passiveValue: 100,
-                aggressiveValue: 350);
+                aggressiveValue: 400);
 
+        // Belönar både hög ADR och att prestera över sin vanliga nivå.
         var performance =
             0.20 + 0.80 * (
-                NormalizeAbsolute(kd, 1.0, 1.6) * 0.5 +
-                NormalizeAbsolute(adr, 75, 110) * 0.5);
+                NormalizeAbsolute(adr, 75, 110) * 0.55 +
+                NormalizeAbsolute(relativeAdr, 0.90, 1.30) * 0.45);
 
         totalImpact += difficulty * performance;
     }
@@ -2712,7 +2719,7 @@ static void CalculateMonthlyUnderdogBonus(
         return;
     }
 
-    // En enstaka supermatch ska inte dominera en hel månads ranking.
+    // Enstaka lyckträffar får inte dominera en hel månads ranking.
     var sampleFactor =
         Math.Min(1.0, player.UnderdogPerformances / 8.0);
 
@@ -2721,7 +2728,7 @@ static void CalculateMonthlyUnderdogBonus(
 
     player.UnderdogBonusPoints =
         Math.Round(
-            Math.Clamp(10 * meanImpact * sampleFactor, 0, 10),
+            Math.Clamp(20 * meanImpact * sampleFactor, 0, 20),
             1,
             MidpointRounding.AwayFromZero);
 }
@@ -2732,9 +2739,6 @@ static double CalculateMonthlyScore(
 {
     if (player.Matches == 0)
         return 0;
-
-    var kdScore =
-        NormalizeAbsolute(player.Kd, 0.75, 1.40);
 
     var adrScore =
         NormalizeAbsolute(player.Adr, 55, 100);
@@ -2762,18 +2766,17 @@ static double CalculateMonthlyScore(
             entrySuccessScore * 0.70 + entryKillsScore * 0.30;
     }
 
-    // 90 baspoäng + högst 10 riktiga bonuspoäng mot starkare motstånd.
+    // 80 baspoäng + högst 20 bonuspoäng mot starkare motstånd.
+    // K/D syns fortfarande i Discord men påverkar inte poängen.
     return Math.Round(
-        kdScore * 20 +
         adrScore * 20 +
         winRateScore * 15 +
-        eloFormScore * 25 +
+        eloFormScore * 35 +
         entryImpactScore * 10 +
         player.UnderdogBonusPoints,
         1,
         MidpointRounding.AwayFromZero);
 }
-
 
 static string BuildMonthlyPlayerBoard(
 
@@ -2940,13 +2943,13 @@ static string BuildMonthlyPlayerBoard(
 
     sb.AppendLine(
 
-        "*Rating: 20p K/D • 20p ADR • 15p vinst • 25p ELO-klättring • 10p entry-impact • upp till 10p underdog-bonus.*");
+        "*Rating: 35p ELO-klättring • 20p ADR • 15p vinst • 10p entry-impact • upp till 20p mot högre ELO. K/D påverkar inte poängen.*");
 
 
 
     sb.AppendLine(
 
-        "*Underdog-bonus kräver minst +100 ELO i motståndarlaget, minst 1.0 K/D och 75 ADR i samma match. Fler starka matcher ger mer.*");
+        "*Mot högre ELO: minst +100 i motståndarlagets snitt samt 75 ADR och minst 90% av din månads-ADR. Åtta starka matcher ger full möjlig effekt.*");
 
     sb.AppendLine(
         "*Motståndar-ELO är aktuell ELO (uppskattning, inte historisk match-ELO). Entry-impact: 70% entry success, 30% entry kills/match.*");
