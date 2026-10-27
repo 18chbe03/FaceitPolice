@@ -232,7 +232,7 @@ Siffrorna ska stämma, men presentationen får gärna vara lite dum.
 
 Månadens spelare ligger i en egen Discord-kanal och använder `MONTHLY_DISCORD_WEBHOOK_URL`.
 
-Det är ett månadspris, inte en live-tavla. När en kalendermånad är slut räknar appen på **alla gruppmatcher från den avslutade månaden**. Minst **30 gruppmatcher** krävs för att kunna vinna.
+Det är ett månadspris, inte en live-tavla. När en kalendermånad är slut räknar appen på **alla gruppmatcher från den avslutade månaden**. Minst **20 gruppmatcher** krävs för att kunna vinna.
 
 Ratingen är 0–100 och består av **80 baspoäng + upp till 20 bonuspoäng**:
 
@@ -251,6 +251,8 @@ Underdog-bonus räknas per kvalificerad gruppmatch när det finns motståndar-EL
 **Begränsning:** FACEIT-uppslaget ger motståndarnas *aktuella* ELO, inte deras ELO när matchen spelades. Egen ELO approximeras som mittvärdet mellan månadens start- och slutvärde. Matchup-bonusen är därför en uppskattning. Om motståndar-ELO inte kan hämtas delas inga bonuspoäng ut för den matchen. ELO-förändringen är kontots förändring, inte bara ELO från gruppmatcherna.
 
 Entry-impact består av 70 % entry success och 30 % entry kills per match. MVP/match visas på vinnaren men påverkar inte ratingen.
+
+Vid månadsavslut publiceras vinnaren med statistik och en slumpad positiv kommentar. Tvåan och trean får varsin slumpad roast. Om `chrillebille` kommer på pallen används en separat pool med 12 specialroasts: vid seger får han dessutom en vanlig vinnarhyllning. Det finns 12 kommentarer per kategori (48 totalt). Kommentarerna är färdigskrivna, AI-genererade texter som slumpas lokalt – inget AI-anrop görs under körning. I slutet av Discord-meddelandet visas AI-notisen och därefter `🐷 Grisjuryn har talat. Beslutet kan inte överklagas.`
 
 ### Bara ett meddelande per månad
 

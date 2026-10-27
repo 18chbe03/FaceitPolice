@@ -28,7 +28,7 @@ const int MinimumGroupMatchesForRanking = 2;
 
 const int MinimumGroupMatchesForAwards = 5;
 
-const int MinimumMonthlyGroupMatches = 30;
+const int MinimumMonthlyGroupMatches = 20;
 
 
 
@@ -2779,194 +2779,197 @@ static double CalculateMonthlyScore(
 }
 
 static string BuildMonthlyPlayerBoard(
-
     IReadOnlyList<MonthlyPlayerEntry> players,
-
     string monthLabel,
-
     int minimumMatches)
-
 {
+    var sb = new StringBuilder();
 
-    var sb =
-
-        new StringBuilder();
-
-
-
-    var eligible =
-
-        players
-
-            .Where(x => x.Matches >= minimumMatches)
-
-            .OrderByDescending(x => x.Score)
-
-            .ThenByDescending(x => x.Matches)
-
-            .ThenByDescending(x => x.Adr)
-
-            .ToList();
-
-
+    var eligible = players
+        .Where(x => x.Matches >= minimumMatches)
+        .OrderByDescending(x => x.Score)
+        .ThenByDescending(x => x.Matches)
+        .ThenByDescending(x => x.Adr)
+        .ToList();
 
     if (eligible.Count == 0)
-
     {
-
         sb.AppendLine("⭐ ━━━━━━━━━━━━━━━━━ ⭐");
-
         sb.AppendLine("### 🏆 INGEN VINNARE");
-
         sb.AppendLine("⭐ ━━━━━━━━━━━━━━━━━ ⭐");
-
         sb.AppendLine();
-
-        sb.AppendLine(
-
-            $"Ingen nådde {minimumMatches} gruppmatcher under {monthLabel.ToLowerInvariant()}.");
-
+        sb.AppendLine($"Ingen nådde {minimumMatches} gruppmatcher under {monthLabel.ToLowerInvariant()}.");
         sb.AppendLine();
-
-        sb.AppendLine(
-
-            "*Ingen spelare utses den här månaden.*");
-
-
-
+        sb.AppendLine("*Ingen spelare utses den här månaden.*");
         return sb.ToString();
-
     }
 
-
-
-    var winner =
-
-        eligible[0];
-
-
-
+    var winner = eligible[0];
     sb.AppendLine("⭐ ━━━━━━━━━━━━━━━━━ ⭐");
-
-    sb.AppendLine(
-
-        $"### 🏆 {EscapeDiscordMarkdown(winner.Name)} 🏆");
-
+    sb.AppendLine($"### 🏆 {EscapeDiscordMarkdown(winner.Name)} 🏆");
     sb.AppendLine("⭐ ━━━━━━━━━━━━━━━━━ ⭐");
-
     sb.AppendLine();
 
+    // All befintlig statistik och poängmodell behålls.
     sb.AppendLine(
-
         $"📊 **{winner.Matches} gruppmatcher** • " +
-
         $"{winner.Wins}V-{winner.Losses}F • 🏆 {winner.WinRate:0}% vinst");
-
-
-
     sb.AppendLine(
-
         $"⚔️ {winner.Kd:0.00} K/D • " +
-
         $"💥 {winner.Adr:0.0} ADR • " +
-
         $"⭐ {winner.AverageMvps:0.00} MVP/match");
 
-
-
-    var eloText =
-
-        winner.EloAtMonthEnd.HasValue
-
-            ? $"{winner.EloAtMonthEnd.Value} ELO • {FormatMonthlyEloDelta(winner.EloDelta)}"
-
-            : FormatMonthlyEloDelta(winner.EloDelta);
-
-
-
+    var eloText = winner.EloAtMonthEnd.HasValue
+        ? $"{winner.EloAtMonthEnd.Value} ELO • {FormatMonthlyEloDelta(winner.EloDelta)}"
+        : FormatMonthlyEloDelta(winner.EloDelta);
     sb.AppendLine(
-
         $"📈 {eloText} • " +
-
         $"🚪 {winner.EntryKillsPerMatch:0.0} entry kills/m • " +
-
         $"✅ {winner.EntrySuccessPercentage:0}% entry success");
-
-
-
     sb.AppendLine();
-
     sb.AppendLine(
         $"💪 **Mot högre ELO:** {winner.UnderdogPerformances} starka matcher " +
         $"• +{winner.UnderdogBonusPoints:0.0} bonuspoäng " +
         $"({winner.OpponentEloMatches}/{winner.Matches} matcher med ELO-data)");
-
     sb.AppendLine();
+    sb.AppendLine($"### ⭐ Månadsrating: {winner.Score:0.0}/100 ⭐");
+    sb.AppendLine();
+    sb.AppendLine("👑 **Grisjuryns hyllning**");
+    sb.AppendLine($"*{PickMonthlyWinnerComment(winner.Name)}*");
 
-    sb.AppendLine(
-
-        $"### ⭐ Månadsrating: {winner.Score:0.0}/100 ⭐");
-
-
+    // Chrille hyllas fortfarande som vinnare men får dessutom sin separata specialroast.
+    if (IsChrillebille(winner.Name))
+    {
+        sb.AppendLine();
+        sb.AppendLine("🤡 **Specialgranskning av chrillebille**");
+        sb.AppendLine($"*{PickMonthlyChrilleComment()}*");
+    }
 
     if (eligible.Count > 1)
-
     {
-
+        var runnerUp = eligible[1];
         sb.AppendLine();
-
+        sb.AppendLine($"🥈 **{EscapeDiscordMarkdown(runnerUp.Name)}** — {runnerUp.Score:0.0}/100");
         sb.AppendLine(
-
-            $"🥈 **{EscapeDiscordMarkdown(eligible[1].Name)}** — " +
-
-            $"{eligible[1].Score:0.0}/100");
-
+            $"📊 {runnerUp.Matches} gruppmatcher • {runnerUp.WinRate:0}% WR • " +
+            $"💥 {runnerUp.Adr:0.0} ADR • 📈 {FormatMonthlyEloDelta(runnerUp.EloDelta)}");
+        sb.AppendLine($"*{(IsChrillebille(runnerUp.Name) ? PickMonthlyChrilleComment() : PickMonthlyRunnerUpComment(runnerUp.Name))}*");
     }
-
-
 
     if (eligible.Count > 2)
-
     {
-
+        var third = eligible[2];
+        sb.AppendLine();
+        sb.AppendLine($"🥉 **{EscapeDiscordMarkdown(third.Name)}** — {third.Score:0.0}/100");
         sb.AppendLine(
-
-            $"🥉 **{EscapeDiscordMarkdown(eligible[2].Name)}** — " +
-
-            $"{eligible[2].Score:0.0}/100");
-
+            $"📊 {third.Matches} gruppmatcher • {third.WinRate:0}% WR • " +
+            $"💥 {third.Adr:0.0} ADR • 📈 {FormatMonthlyEloDelta(third.EloDelta)}");
+        sb.AppendLine($"*{(IsChrillebille(third.Name) ? PickMonthlyChrilleComment() : PickMonthlyThirdComment(third.Name))}*");
     }
 
-
-
     sb.AppendLine();
-
     sb.AppendLine(
-
         "*Rating: 35p ELO-klättring • 20p ADR • 15p vinst • 10p entry-impact • upp till 20p mot högre ELO. K/D påverkar inte poängen.*");
-
-
-
     sb.AppendLine(
-
         "*Mot högre ELO: minst +100 i motståndarlagets snitt samt 75 ADR och minst 90% av din månads-ADR. Åtta starka matcher ger full möjlig effekt.*");
-
     sb.AppendLine(
         "*Motståndar-ELO är aktuell ELO (uppskattning, inte historisk match-ELO). Entry-impact: 70% entry success, 30% entry kills/match.*");
-
-
-
-    sb.AppendLine(
-
-        $"*Minst {minimumMatches} gruppmatcher krävs. Nuvarande ELO ger inga bonuspoäng i sig.*");
-
-
+    sb.AppendLine($"*Minst {minimumMatches} gruppmatcher krävs. Nuvarande ELO ger inga bonuspoäng i sig.*");
+    sb.AppendLine();
+    sb.AppendLine("*🤖 Kommentarerna är AI-genererade och väljs slumpmässigt.*");
+    sb.AppendLine("🐷 *Grisjuryn har talat. Beslutet kan inte överklagas.*");
 
     return sb.ToString();
-
 }
 
+// Kommentarpoolerna är statiska författade texter: ingen AI-tjänst anropas vid körning.
+// Slumpningen sker bara när månadens meddelande byggs för publicering.
+static bool IsChrillebille(string name) =>
+    string.Equals(name, "chrillebille", StringComparison.OrdinalIgnoreCase);
 
+static string PickMonthlyComment(string[] comments, string name) =>
+    comments[Random.Shared.Next(comments.Length)]
+        .Replace("{player}", EscapeDiscordMarkdown(name), StringComparison.Ordinal);
+
+static string PickMonthlyWinnerComment(string name)
+{
+    string[] comments =
+    {
+        "👑 En månad, en kung, en jävla massa ELO. {player} har visat var skåpet ska stå. Resten får börja träna.",
+        "🚀 {player} har inte spelat FACEIT den här månaden. Han har bedrivit organiserad ELO-insamling.",
+        "🐐 Vissa spelar för att vinna. {player} spelar för att påminna resten om vem som bestämmer.",
+        "🔥 Motståndarna försökte. Lagkamraterna tittade på. {player} levererade. Precis som vanligt.",
+        "💪 Det snackades mycket i Discord. {player} lät statistiken sköta snacket. Kungligt.",
+        "🦍 Det finns grisar, och så finns det {player}. En helt annan viktklass.",
+        "📈 {player}s ELO-kurva ser ut som en börsraket. Resten av servern borde investera i aim-träning.",
+        "🎯 Vissa skyller på teammates, ping och tickrate. {player} samlar bara vinster och låter resultaten tala.",
+        "🏆 Grisjuryn har granskat siffrorna. Det finns inget att diskutera. {player} är månadens självklara etta.",
+        "🐷 En sann gris klagar inte på matchmaking. Han erövrar den. {player} har visat vägen.",
+        "💀 När {player} ansluter till servern börjar motståndarna redan fundera på nästa match.",
+        "⭐ En månad som kommer gå till historien. {player} har satt ribban. Resten får försöka nå upp."
+    };
+    return PickMonthlyComment(comments, name);
+}
+
+static string PickMonthlyRunnerUpComment(string name)
+{
+    string[] comments =
+    {
+        "🥈 Så nära guldet att det nästan är imponerande. Nästan.",
+        "💀 En hel månad av slit för att bli första förloraren. Respekt ändå.",
+        "🪑 Samma utsikt som vinnaren, men utan pokal.",
+        "📉 Silver är bara guld för folk med lite lägre ambitioner.",
+        "🥲 Hade det funnits pris för nästan hade {player} varit världsmästare.",
+        "🎯 {player} var en bra månad ifrån att ha en riktigt bra månad.",
+        "🐌 {player} jagade förstaplatsen hela månaden. Synd att den sprang snabbare.",
+        "🧻 Andraplatsen: tillräckligt bra för att synas, för dålig för att firas.",
+        "🚑 Grisjuryn rekommenderar vila efter denna massiva besvikelse.",
+        "🤏 Det var nära. Men nära räknas bara i hästskor och dåliga ursäkter.",
+        "🪞 Titta dig i spegeln, {player}. Där ser du någon som nästan vann.",
+        "📊 Statistiken visar att {player} var bättre än nästan alla. Tyvärr inte den enda som räknades."
+    };
+    return PickMonthlyComment(comments, name);
+}
+
+static string PickMonthlyThirdComment(string name)
+{
+    string[] comments =
+    {
+        "🥉 Brons! En medalj för att åtminstone inte vara helt värdelös.",
+        "🐷 Någon måste ju fylla ut pallen. Tack för din insats, {player}.",
+        "💀 Tredje bäst. Det låter bättre om man inte berättar hur många som deltog.",
+        "🪑 {player} är officiellt bäst av dem som inte ens var nära att vinna.",
+        "📉 Bronsmedaljen är ett fint sätt att säga att två personer var bättre.",
+        "🧻 Grattis till tredjeplatsen! Pokalen ligger i soporna bakom Discord-servern.",
+        "🥲 {player} kom, såg och blev trea. Vilken otrolig saga.",
+        "🎮 En hel månad av Counter-Strike och belöningen blev ett deltagardiplom i metall.",
+        "🐌 {player} tog sig upp på pallen. Resten av pallen önskar att det inte hänt.",
+        "💩 Tredjeplatsen går till {player}. Någon måste ju representera medelmåttigheten.",
+        "🏅 Brons är också en medalj. Det är viktigt att {player} fortsätter intala sig det.",
+        "🤡 {player} är bland de tre bästa grisarna. Tyvärr den tredje."
+    };
+    return PickMonthlyComment(comments, name);
+}
+
+static string PickMonthlyChrilleComment()
+{
+    string[] comments =
+    {
+        "🚨 Botens utvecklare har placerat sig på pallen. En oberoende utredning har inletts.",
+        "💻 chrillebille har lagt fler timmar på algoritmen än på sin aim. Det märks.",
+        "⚖️ Grisjuryn hävdar att poängsystemet är rättvist. Källa: chrillebille.",
+        "🔧 chrillebille kunde inte vinna på servern, så han försökte vinna i Visual Studio.",
+        "🧮 Efter en noggrann genomgång har chrillebille konstaterat att algoritmen fungerar. Märkligt nog.",
+        "🐷 Det är inte fusk om man själv har skrivit reglerna. /chrillebille",
+        "🚨 FACEIT har inga synpunkter. GitHub har däremot begärt att få granska senaste committen.",
+        "💰 Vi kan bekräfta att chrillebille inte har mutat juryn. Juryn är nämligen också chrillebille.",
+        "🖥️ En stark prestation av chrillebille. Kodgranskning är fortfarande under behandling.",
+        "👀 Botens skapare på pallen? Vilket otroligt sammanträffande. Verkligen.",
+        "🔄 chrillebille har gjort 14 ändringar i poängsystemet. Alla helt orelaterade till hans placering.",
+        "🏛️ Grisarnas disciplinnämnd har godkänt resultatet. Ordförande: chrillebille."
+    };
+    return PickMonthlyComment(comments, "chrillebille");
+}
 
 static string FormatMonthlyEloDelta(
 
