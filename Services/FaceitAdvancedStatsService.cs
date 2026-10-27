@@ -175,6 +175,8 @@ public sealed class FaceitAdvancedStatsService
                             opponentAverageElo.Value;
 
                         result.OpponentEloMatches++;
+                        result.OpponentAverageEloByMatch[match.Key] =
+                            opponentAverageElo.Value;
                     }
                 }
             }

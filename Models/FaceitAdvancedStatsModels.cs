@@ -57,6 +57,10 @@ public sealed class FaceitAdvancedPlayerStats
 
     public int OpponentEloMatches { get; set; }
 
+    // Match-ID -> genomsnittlig aktuell ELO hos motståndarlaget.
+    public Dictionary<string, double> OpponentAverageEloByMatch { get; } =
+        new(StringComparer.OrdinalIgnoreCase);
+
     public double? AverageOpponentElo =>
         OpponentEloMatches == 0
             ? null

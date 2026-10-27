@@ -1300,7 +1300,9 @@ if (currentMonthAdvancedInputs.Count > 0)
 
         await faceitAdvancedStatsService.CalculateAsync(
 
-            currentMonthAdvancedInputs);
+            currentMonthAdvancedInputs,
+
+            includeOpponentElo: true);
 
 
 
@@ -1337,6 +1339,14 @@ if (currentMonthAdvancedInputs.Count > 0)
         player.EntrySuccessPercentage =
 
             advanced.EntrySuccessPercentage;
+
+        CalculateMonthlyUnderdogBonus(
+
+            player,
+
+            currentMonthGroupStatsByPlayerId[player.PlayerId],
+
+            advanced);
 
     }
 
@@ -1422,7 +1432,11 @@ else
 
             $"{player.Kd:0.00} K/D • {player.Adr:0.0} ADR • " +
 
-            $"{player.WinRate:0}% WR • {FormatMonthlyEloDelta(player.EloDelta)}");
+            $"{player.WinRate:0}% WR • {FormatMonthlyEloDelta(player.EloDelta)} • " +
+
+            $"💪 +{player.UnderdogBonusPoints:0.0}p vs högre ELO " +
+
+            $"({player.UnderdogPerformances} matcher)");
 
     }
 
@@ -1646,7 +1660,9 @@ if (monthToPublish is not null)
 
             await faceitAdvancedStatsService.CalculateAsync(
 
-                monthlyAdvancedInputs);
+                monthlyAdvancedInputs,
+
+                includeOpponentElo: true);
 
 
 
@@ -1683,6 +1699,14 @@ if (monthToPublish is not null)
             player.EntrySuccessPercentage =
 
                 advanced.EntrySuccessPercentage;
+
+            CalculateMonthlyUnderdogBonus(
+
+                player,
+
+                monthlyGroupStatsByPlayerId[player.PlayerId],
+
+                advanced);
 
         }
 
@@ -2606,132 +2630,149 @@ static TimeZoneInfo GetSwedenTimeZone()
 
 
 
-static double CalculateMonthlyScore(
-
-    MonthlyPlayerEntry player)
-
+// Matcher mot starkare motstånd kan ge upp till 10 bonuspoäng.
+// FACEIT ger aktuell (inte historisk) ELO för motståndarna, så jämförelsen
+// med spelarens ungefärliga månads-ELO är en uppskattning.
+static void CalculateMonthlyUnderdogBonus(
+    MonthlyPlayerEntry player,
+    FaceitStatsResponse groupStats,
+    FaceitAdvancedPlayerStats advanced)
 {
+    player.UnderdogBonusPoints = 0;
+    player.UnderdogPerformances = 0;
+    player.OpponentEloMatches = 0;
 
-    if (player.Matches == 0)
-
-        return 0;
-
-
-
-    var kdScore =
-
-        NormalizeAbsolute(
-
-            player.Kd,
-
-            passiveValue: 0.75,
-
-            aggressiveValue: 1.40);
-
-
-
-    var adrScore =
-
-        NormalizeAbsolute(
-
-            player.Adr,
-
-            passiveValue: 55,
-
-            aggressiveValue: 100);
-
-
-
-    var winRateScore =
-
-        NormalizeAbsolute(
-
-            player.WinRate,
-
-            passiveValue: 35,
-
-            aggressiveValue: 70);
-
-
-
-    var eloFormScore =
-
-        player.EloDelta.HasValue
-
-            ? NormalizeAbsolute(
-
-                player.EloDelta.Value,
-
-                passiveValue: -100,
-
-                aggressiveValue: 100)
-
-            : 0.5;
-
-
-
-    var entryImpactScore =
-
-        0.5;
-
-
-
-    if (player.AdvancedMatches > 0)
-
+    if (!player.EloAtMonthEnd.HasValue ||
+        advanced.OpponentAverageEloByMatch.Count == 0)
     {
-
-        var entrySuccessScore =
-
-            NormalizeAbsolute(
-
-                player.EntrySuccessPercentage,
-
-                passiveValue: 25,
-
-                aggressiveValue: 60);
-
-
-
-        var entryKillsScore =
-
-            NormalizeAbsolute(
-
-                player.EntryKillsPerMatch,
-
-                passiveValue: 0.5,
-
-                aggressiveValue: 2.5);
-
-
-
-        entryImpactScore =
-
-            entrySuccessScore * 0.70 +
-
-            entryKillsScore * 0.30;
-
+        return;
     }
 
+    // Mittvärdet minskar snedvridningen när spelaren har klättrat under månaden.
+    var estimatedOwnElo =
+        player.EloAtMonthEnd.Value - player.EloDelta.GetValueOrDefault() / 2.0;
 
+    var seenMatchIds =
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-    return Math.Round(
+    double totalImpact = 0;
 
-        (kdScore * 0.25 +
+    foreach (var item in groupStats.Items)
+    {
+        var match = item.Stats;
 
-         adrScore * 0.25 +
+        if (string.IsNullOrWhiteSpace(match.MatchId) ||
+            !seenMatchIds.Add(match.MatchId) ||
+            !advanced.OpponentAverageEloByMatch.TryGetValue(
+                match.MatchId,
+                out var opponentElo))
+        {
+            continue;
+        }
 
-         winRateScore * 0.20 +
+        player.OpponentEloMatches++;
 
-         eloFormScore * 0.15 +
+        var eloDifference = opponentElo - estimatedOwnElo;
 
-         entryImpactScore * 0.15) * 100,
+        // Minst +100 ELO i motståndarlaget för att räknas som underdog.
+        if (eloDifference < 100)
+        {
+            continue;
+        }
 
-        1,
+        var kills = ToInt(match.Kills);
+        var deaths = ToInt(match.Deaths);
+        var kd = deaths == 0 ? kills : (double)kills / deaths;
+        var adr = ToDouble(match.Adr);
 
-        MidpointRounding.AwayFromZero);
+        // Att bara möta bättre spelare ger inga bonuspoäng.
+        if (kd < 1.0 || adr < 75)
+        {
+            continue;
+        }
 
+        player.UnderdogPerformances++;
+
+        var difficulty =
+            0.25 + 0.75 * NormalizeAbsolute(
+                eloDifference,
+                passiveValue: 100,
+                aggressiveValue: 350);
+
+        var performance =
+            0.20 + 0.80 * (
+                NormalizeAbsolute(kd, 1.0, 1.6) * 0.5 +
+                NormalizeAbsolute(adr, 75, 110) * 0.5);
+
+        totalImpact += difficulty * performance;
+    }
+
+    if (player.UnderdogPerformances == 0)
+    {
+        return;
+    }
+
+    // En enstaka supermatch ska inte dominera en hel månads ranking.
+    var sampleFactor =
+        Math.Min(1.0, player.UnderdogPerformances / 8.0);
+
+    var meanImpact =
+        totalImpact / player.UnderdogPerformances;
+
+    player.UnderdogBonusPoints =
+        Math.Round(
+            Math.Clamp(10 * meanImpact * sampleFactor, 0, 10),
+            1,
+            MidpointRounding.AwayFromZero);
 }
 
+
+static double CalculateMonthlyScore(
+    MonthlyPlayerEntry player)
+{
+    if (player.Matches == 0)
+        return 0;
+
+    var kdScore =
+        NormalizeAbsolute(player.Kd, 0.75, 1.40);
+
+    var adrScore =
+        NormalizeAbsolute(player.Adr, 55, 100);
+
+    var winRateScore =
+        NormalizeAbsolute(player.WinRate, 35, 70);
+
+    // 0 ELO ger 40 % på denna del, +150 ger max och -100 ger noll.
+    var eloFormScore =
+        player.EloDelta.HasValue
+            ? NormalizeAbsolute(player.EloDelta.Value, -100, 150)
+            : 0.4;
+
+    var entryImpactScore = 0.5;
+
+    if (player.AdvancedMatches > 0)
+    {
+        var entrySuccessScore =
+            NormalizeAbsolute(player.EntrySuccessPercentage, 25, 60);
+
+        var entryKillsScore =
+            NormalizeAbsolute(player.EntryKillsPerMatch, 0.5, 2.5);
+
+        entryImpactScore =
+            entrySuccessScore * 0.70 + entryKillsScore * 0.30;
+    }
+
+    // 90 baspoäng + högst 10 riktiga bonuspoäng mot starkare motstånd.
+    return Math.Round(
+        kdScore * 20 +
+        adrScore * 20 +
+        winRateScore * 15 +
+        eloFormScore * 25 +
+        entryImpactScore * 10 +
+        player.UnderdogBonusPoints,
+        1,
+        MidpointRounding.AwayFromZero);
+}
 
 
 static string BuildMonthlyPlayerBoard(
@@ -2853,6 +2894,13 @@ static string BuildMonthlyPlayerBoard(
     sb.AppendLine();
 
     sb.AppendLine(
+        $"💪 **Mot högre ELO:** {winner.UnderdogPerformances} starka matcher " +
+        $"• +{winner.UnderdogBonusPoints:0.0} bonuspoäng " +
+        $"({winner.OpponentEloMatches}/{winner.Matches} matcher med ELO-data)");
+
+    sb.AppendLine();
+
+    sb.AppendLine(
 
         $"### ⭐ Månadsrating: {winner.Score:0.0}/100 ⭐");
 
@@ -2892,13 +2940,16 @@ static string BuildMonthlyPlayerBoard(
 
     sb.AppendLine(
 
-        "*Rating: 25% K/D • 25% ADR • 20% vinst • 15% ELO-form • 15% entry-impact.*");
+        "*Rating: 20p K/D • 20p ADR • 15p vinst • 25p ELO-klättring • 10p entry-impact • upp till 10p underdog-bonus.*");
 
 
 
     sb.AppendLine(
 
-        "*Entry-impact: 70% entry success • 30% entry kills/match. MVP visas bara som extra statistik.*");
+        "*Underdog-bonus kräver minst +100 ELO i motståndarlaget, minst 1.0 K/D och 75 ADR i samma match. Fler starka matcher ger mer.*");
+
+    sb.AppendLine(
+        "*Motståndar-ELO är aktuell ELO (uppskattning, inte historisk match-ELO). Entry-impact: 70% entry success, 30% entry kills/match.*");
 
 
 
@@ -4492,7 +4543,11 @@ internal sealed class MonthlyPlayerEntry
 
     public double EntrySuccessPercentage { get; set; }
 
+    public int OpponentEloMatches { get; set; }
 
+    public int UnderdogPerformances { get; set; }
+
+    public double UnderdogBonusPoints { get; set; }
 
     public double Score { get; set; }
 

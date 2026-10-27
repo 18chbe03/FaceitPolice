@@ -234,15 +234,22 @@ Månadens spelare ligger i en egen Discord-kanal och använder `MONTHLY_DISCORD_
 
 Det är ett månadspris, inte en live-tavla. När en kalendermånad är slut räknar appen på **alla gruppmatcher från den avslutade månaden**. Minst **30 gruppmatcher** krävs för att kunna vinna.
 
-Ratingen är 0–100 och väger:
+Ratingen är 0–100 och består av **90 baspoäng + upp till 10 bonuspoäng**:
 
-- 25 % K/D
-- 25 % ADR
-- 20 % winrate
-- 15 % ELO-form under månaden
-- 15 % entry-impact
+- 20 poäng K/D
+- 20 poäng ADR
+- 15 poäng winrate
+- **25 poäng ELO-klättring under månaden** (tidigare 15)
+- 10 poäng entry-impact
+- **Upp till 10 poäng underdog-bonus** för bra spel mot starkare motstånd
 
-Entry-impact består av 70 % entry success och 30 % entry kills per match. MVP/match visas på vinnaren men påverkar inte ratingen. Nuvarande ELO i sig ger inga bonuspoäng, så en spelare med lägre ELO kan vinna om månaden faktiskt varit bättre.
+ELO-formen ger 0 poäng vid -100 ELO och maximal utdelning vid +150 ELO. Vid saknad historik används neutral ELO-poäng (40 % av ELO-delen). Hög nuvarande ELO ger **inte** poäng i sig.
+
+Underdog-bonus räknas per kvalificerad gruppmatch när det finns motståndar-ELO. Det krävs att **motståndarlagets snitt ligger minst 100 ELO över spelarens uppskattade månads-ELO**, samtidigt som spelaren når **minst 1,0 K/D och 75 ADR i matchen**. Starkare motstånd samt högre K/D/ADR ger mer bonus. Antalet kvalificerade prestationer skalar bonusen upp till full effekt vid åtta matcher, så en enstaka lyckträff inte dominerar månaden. Bonusen visas i liveprognosen och på vinnartavlan.
+
+**Begränsning:** FACEIT-uppslaget ger motståndarnas *aktuella* ELO, inte deras ELO när matchen spelades. Egen ELO approximeras som mittvärdet mellan månadens start- och slutvärde. Matchup-bonusen är därför en uppskattning. Om motståndar-ELO inte kan hämtas delas inga bonuspoäng ut för den matchen. ELO-förändringen är kontots förändring, inte bara ELO från gruppmatcherna.
+
+Entry-impact består av 70 % entry success och 30 % entry kills per match. MVP/match visas på vinnaren men påverkar inte ratingen.
 
 ### Bara ett meddelande per månad
 
