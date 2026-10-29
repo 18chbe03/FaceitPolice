@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 
 using System.Text;
 
@@ -1407,112 +1407,82 @@ foreach (var player in currentMonthPreviewPlayers)
 
 
 
-var currentMonthPreviewRanking =
-
+// Liveprognosen visar samma kvalificeringskrav som slutresultatet.
+// Detta påverkar endast konsolutskriften – inga poäng eller månadsmeddelanden ändras.
+var currentMonthEligibleRanking =
     currentMonthPreviewPlayers
-
-        .Where(x => x.Matches > 0)
-
+        .Where(x => x.Matches >= MinimumMonthlyGroupMatches)
         .OrderByDescending(x => x.Score)
-
         .ThenByDescending(x => x.Matches)
-
         .ThenByDescending(x => x.Adr)
-
         .Take(3)
-
         .ToList();
 
-
+var currentMonthChallengers =
+    currentMonthPreviewPlayers
+        .Where(x => x.Matches > 0 && x.Matches < MinimumMonthlyGroupMatches)
+        .OrderByDescending(x => x.Score)
+        .ThenByDescending(x => x.Matches)
+        .ThenByDescending(x => x.Adr)
+        .Take(3)
+        .ToList();
 
 Console.WriteLine();
-
 Console.WriteLine(
-
     $"🔮 MÅNADENS SPELARE JUST NU — {currentMonthWindow.Label}");
 
-
-
-if (currentMonthPreviewRanking.Count == 0)
-
+if (currentMonthEligibleRanking.Count == 0)
 {
-
     Console.WriteLine(
-
-        "Ingen har spelat en kvalificerad gruppmatch ännu den här månaden.");
-
+        $"Ingen spelare har ännu nått {MinimumMonthlyGroupMatches} gruppmatcher. " +
+        "Ingen är kvalificerad till slutpallen just nu.");
 }
-
 else
-
 {
+    Console.WriteLine(
+        $"🏆 KVALIFICERAD TOPP 3 — MINST {MinimumMonthlyGroupMatches} GRUPPMATCHER");
 
-    var medals =
+    var medals = new[] { "🏆", "🥈", "🥉" };
 
-        new[] { "🏆", "🥈", "🥉" };
-
-
-
-    for (var i = 0; i < currentMonthPreviewRanking.Count; i++)
-
+    for (var i = 0; i < currentMonthEligibleRanking.Count; i++)
     {
-
-        var player =
-
-            currentMonthPreviewRanking[i];
-
-
+        var player = currentMonthEligibleRanking[i];
 
         Console.WriteLine(
-
             $"{medals[i]} {player.Name} — {player.Score:0.0}/100 • " +
-
             $"{player.Matches} gruppmatcher • " +
-
             $"{player.Kd:0.00} K/D • {player.Adr:0.0} ADR • " +
-
             $"{player.WinRate:0}% WR • {FormatMonthlyEloDelta(player.EloDelta)} • " +
-
             $"💪 +{player.UnderdogBonusPoints:0.0}p vs högre ELO " +
-
             $"({player.UnderdogPerformances} matcher)");
-
     }
 
-
-
-    var currentLeader =
-
-        currentMonthPreviewRanking[0];
-
-
-
-    if (currentLeader.Matches < MinimumMonthlyGroupMatches)
-
+    if (currentMonthEligibleRanking.Count < 3)
     {
-
         Console.WriteLine(
-
-            $"ℹ️ Liveprognos: {currentLeader.Name} leder just nu, men minst " +
-
-            $"{MinimumMonthlyGroupMatches} gruppmatcher krävs när månaden är slut.");
-
+            $"ℹ️ Endast {currentMonthEligibleRanking.Count} " +
+            $"spelare har nått {MinimumMonthlyGroupMatches} gruppmatcher ännu.");
     }
-
-    else
-
-    {
-
-        Console.WriteLine(
-
-            $"✅ {currentLeader.Name} uppfyller redan kravet på " +
-
-            $"{MinimumMonthlyGroupMatches} gruppmatcher.");
-
-    }
-
 }
 
+if (currentMonthChallengers.Count > 0)
+{
+    Console.WriteLine(
+        $"⏳ UTMANARE — ÄNNU INTE KVALIFICERADE ({MinimumMonthlyGroupMatches} MATCHER KRÄVS)");
+
+    foreach (var player in currentMonthChallengers)
+    {
+        var matchesRemaining = MinimumMonthlyGroupMatches - player.Matches;
+
+        Console.WriteLine(
+            $"▫️ {player.Name} — {player.Score:0.0}/100 • " +
+            $"{player.Matches}/{MinimumMonthlyGroupMatches} gruppmatcher " +
+            $"(saknar {matchesRemaining}) • " +
+            $"{FormatMonthlyEloDelta(player.EloDelta)} • " +
+            $"💪 +{player.UnderdogBonusPoints:0.0}p vs högre ELO " +
+            $"({player.UnderdogPerformances} matcher)");
+    }
+}
 
 
 // --------------------------------------------------
